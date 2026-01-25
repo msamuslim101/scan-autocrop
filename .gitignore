@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.manifest
+*.spec
+build/
+dist/
+
+# Images & Data (Protect Privacy)
+*.jpg
+*.jpeg
+*.png
+*.tif
+*.tiff
+*.bmp
+*.pdf
+scans/
+images/
+output/
+cropped/
+uncropped/
+debug/
+temp/
+*test*
+*demo*
+
+# Editor
+.vscode/
+.idea/
+*.swp
+
+# Project Management & Agent Artifacts
+.agent/
+BLACKBOX.md
+MANUAL_CROP_LIST.txt
+SHOWCASE.md
+
+# Large Binaries & External Tools
+tools/ext/
+*.exe
+*.zip
+*.bin
+*.param
