@@ -96,6 +96,37 @@ We analyzed FFmpeg, and while it is excellent for video, it is **unsafe** for sc
 
 ---
 
+##  Bonus: AI Upscaling (Optional)
+
+We included a helper script `upscale_scans.py` for those who want to enhance the *original* uncropped scans using AI upscaling (via [Upscayl](https://github.com/upscayl/upscayl)).
+
+### Prerequisites
+The upscaling tools are **not** included in this repo (too large). You must download the `upscayl-bin` executable and models separately.
+
+1.  Download Upscayl binary and models.
+2.  Place them in `tools/ext/` so the structure looks like:
+    ```
+    tools/ext/
+    ├── upscayl-bin.exe
+    └── models/
+        ├── upscayl-lite-4x/
+        ├── upscayl-standard-4x/
+        └── ...
+    ```
+
+### Configuration & Hardware Notes
+The script is currently configured for **Low VRAM** systems (e.g., integrated graphics):
+
+*   **Model**: Defaults to `upscayl-lite-4x` (fast, low memory).
+*   **Tiling**: Uses `-t 200` to prevent memory crashes on large scans.
+
+**To improve quality (if you have a good GPU):**
+1.  Open `upscale_scans.py`.
+2.  Change `source_model_name` to `"upscayl-standard-4x"` or `"ultrasharp-4x"`.
+3.  Reduce tiling (e.g., `-t 32` or remove `-t`) if you have ample VRAM (>4GB).
+
+---
+
 ## �📚 Credits & Acknowledgements
 
 This project relies on standard open-source libraries:
