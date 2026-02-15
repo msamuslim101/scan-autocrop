@@ -36,6 +36,14 @@ No AI guessing, no vision LLMs, no black-box magic, no heavy GPU usage.
 
 ---
 
+## Web UI Preview
+
+The app runs locally in your browser. Dark theme with a drag-and-drop interface for uploading scanned images or pointing at a local folder.
+
+![Web UI](docs/web-ui.png)
+
+---
+
 ## Quick Start (Web UI)
 
 This is the easiest way to use the tool. It gives you a drag-and-drop interface in your browser.

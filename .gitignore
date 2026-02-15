@@ -15,6 +15,7 @@ dist/
 *.tiff
 *.bmp
 *.pdf
+!docs/**
 scans/
 images/
 output/
