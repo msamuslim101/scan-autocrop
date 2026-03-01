@@ -403,6 +403,49 @@ body {
     font-weight: 700;
 }
 
+/* Tooltip on hover */
+.strategy-badge.has-tooltip {
+    position: relative;
+    cursor: help;
+    transition: all 0.2s ease;
+}
+
+.strategy-badge.has-tooltip:hover {
+    background: var(--bg-hover);
+    border-color: var(--accent-dim);
+}
+
+.strategy-badge.has-tooltip::after {
+    content: attr(data-tooltip);
+    position: absolute;
+    bottom: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%);
+    width: 320px;
+    padding: 12px 16px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-top: 1px solid oklch(30% 0.015 150 / 0.6);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    font-size: 0.76rem;
+    font-weight: 400;
+    line-height: 1.5;
+    white-space: normal;
+    box-shadow: var(--shadow-elevated);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease, transform 0.2s ease;
+    transform: translateX(-50%) translateY(4px);
+    z-index: 50;
+}
+
+.strategy-badge.has-tooltip:hover::after {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+}
+
 /* ----- ACTION BAR ----- */
 .action-bar {
     display: flex;

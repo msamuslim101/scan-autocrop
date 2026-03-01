@@ -112,10 +112,34 @@ You have two options inside the web app:
 3. Click the "Crop Folder" button.
 4. The app processes every image in that folder and saves the cropped versions into a new folder next to the original, named `{original folder} - Cropped`.
 5. You will see statistics showing how many images were cropped successfully and which strategy was used for each.
+6. A `crop-report.txt` file is automatically saved inside the Cropped folder alongside the images.
 
-### Step 4: Stop the Server
+**Understanding the Strategy Badges**
 
-When you are done, go back to the terminal where the server is running and press `Ctrl + C` to stop it.
+After processing, you will see colored badges like "Pro Contour", "Canny Edge", etc. Hover over any badge to see a tooltip explaining what that strategy does and when it is used.
+
+**Exporting the Report**
+
+Click the green "Export Report" button in the results view to download a `.txt` report file to your Downloads folder. This report contains:
+
+- Summary statistics (total, cropped, unchanged, success rate)
+- Strategy breakdown with percentages
+- Full glossary explaining what each strategy means
+- Per-image table with filenames, strategy used, and original vs cropped dimensions
+
+If you used the "Crop Folder" option, the report is also automatically saved as `crop-report.txt` inside the Cropped output folder.
+
+### Step 4: Stop or Restart the Server
+
+To **stop** the server, go back to the terminal where it is running and press `Ctrl + C`.
+
+To **restart** the server (for example, after an update), press `Ctrl + C` to stop it, then run the start command again:
+
+```
+python run.py
+```
+
+The server must be restarted whenever you change any of the Python files (`server.py`, `cropper.py`). Changes to the frontend files (`index.html`, `style.css`, `app.js`) take effect on a browser refresh without needing a server restart.
 
 ---
 

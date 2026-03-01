@@ -35,6 +35,49 @@ const resultsCount = document.getElementById('resultsCount');
 // State
 // ---------------------------------------------------------------------------
 let currentSessionId = null;
+let lastCropData = null;  // Store for export
+
+// ---------------------------------------------------------------------------
+// Strategy Glossary
+// ---------------------------------------------------------------------------
+const STRATEGY_INFO = {
+    pro_contour: {
+        label: 'Pro Contour',
+        desc: 'Primary method. Used Otsu thresholding to separate the photo from the scanner background, then found the outermost contour shape. The irregular contour was used directly as the crop boundary. This is the most common and reliable strategy.'
+    },
+    pro_rect: {
+        label: 'Pro Rect',
+        desc: 'Same Otsu detection as Pro Contour, but the contour approximated to a clean 4-sided rectangle. Produces a tighter, more geometrically precise crop. Works best on well-aligned scans with clean borders.'
+    },
+    canny_edge: {
+        label: 'Canny Edge',
+        desc: 'Fallback for when Otsu fails (e.g. snow photos, white-on-white). Uses gradient-based edge detection to find physical borders regardless of fill color. Catches images that the primary method misses.'
+    },
+    variance: {
+        label: 'Variance',
+        desc: 'Detects photo regions by measuring local pixel variance. Scanner backgrounds have near-zero variance (flat color), while real photos have texture and detail. Used when both Otsu and Canny fail.'
+    },
+    saturation: {
+        label: 'Saturation',
+        desc: 'Uses color saturation to separate content from background. Scanner beds produce pure neutral gray (zero saturation), while even the palest real photos have slight color. Last resort before gradient scan.'
+    },
+    gradient: {
+        label: 'Gradient',
+        desc: 'Final fallback. Scans from each edge inward looking for the first row or column with significant gradient changes, indicating a physical photo boundary. Used when all other methods fail.'
+    },
+    original: {
+        label: 'Original (Unchanged)',
+        desc: 'No crop was applied. This means all 5 strategies determined that the image either has no detectable border to remove, or the detected region was too close to the original size to justify cropping. The original file was saved as-is to prevent data loss.'
+    },
+    no_crop_needed: {
+        label: 'No Crop Needed',
+        desc: 'The engine determined that the image does not have a scanner border. The original was kept unchanged.'
+    },
+    error_fallback: {
+        label: 'Error Fallback',
+        desc: 'An unexpected error occurred during processing. The original image was saved as-is to prevent any data loss.'
+    }
+};
 
 // ---------------------------------------------------------------------------
 // Event Listeners
@@ -104,6 +147,9 @@ folderPathInput.addEventListener('keydown', (e) => {
 
 // Back button
 backBtn.addEventListener('click', resetView);
+
+// Export report button
+document.getElementById('exportBtn').addEventListener('click', exportReport);
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -245,6 +291,7 @@ async function handleFolderCrop(folderPath) {
 // Render Results
 // ---------------------------------------------------------------------------
 function showResults(data) {
+    lastCropData = data;
     dropZoneSection.style.display = 'none';
     resultsSection.style.display = 'block';
 
@@ -257,14 +304,8 @@ function showResults(data) {
 
     setStatus(`Done - ${data.success_rate}% cropped`);
 
-    // Strategy badges
-    strategyBreakdown.innerHTML = '';
-    for (const [strategy, count] of Object.entries(data.stats)) {
-        const badge = document.createElement('span');
-        badge.className = 'strategy-badge';
-        badge.innerHTML = `${formatStrategy(strategy)} <span class="count">${count}</span>`;
-        strategyBreakdown.appendChild(badge);
-    }
+    // Strategy badges with tooltips
+    renderStrategyBadges(data.stats);
 
     // Image cards
     imageGrid.innerHTML = '';
@@ -275,6 +316,7 @@ function showResults(data) {
 }
 
 function showFolderResults(data) {
+    lastCropData = data;
     dropZoneSection.style.display = 'none';
     resultsSection.style.display = 'block';
 
@@ -286,14 +328,8 @@ function showFolderResults(data) {
 
     setStatus(`Done - ${data.success_rate}% cropped`);
 
-    // Strategy badges
-    strategyBreakdown.innerHTML = '';
-    for (const [strategy, count] of Object.entries(data.stats)) {
-        const badge = document.createElement('span');
-        badge.className = 'strategy-badge';
-        badge.innerHTML = `${formatStrategy(strategy)} <span class="count">${count}</span>`;
-        strategyBreakdown.appendChild(badge);
-    }
+    // Strategy badges with tooltips
+    renderStrategyBadges(data.stats);
 
     // Image cards (folder mode - no thumbnails, just info)
     imageGrid.innerHTML = '';
@@ -365,4 +401,95 @@ function createFolderCard(result) {
 
 function formatStrategy(str) {
     return str.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
+// ---------------------------------------------------------------------------
+// Strategy Badge Rendering (with tooltips)
+// ---------------------------------------------------------------------------
+function renderStrategyBadges(stats) {
+    strategyBreakdown.innerHTML = '';
+    for (const [strategy, count] of Object.entries(stats)) {
+        const badge = document.createElement('span');
+        badge.className = 'strategy-badge has-tooltip';
+
+        const info = STRATEGY_INFO[strategy];
+        const tooltip = info ? info.desc : '';
+        badge.setAttribute('data-tooltip', tooltip);
+
+        badge.innerHTML = `${formatStrategy(strategy)} <span class="count">${count}</span>`;
+        strategyBreakdown.appendChild(badge);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Export Report
+// ---------------------------------------------------------------------------
+function exportReport() {
+    if (!lastCropData) return;
+
+    const d = lastCropData;
+    const now = new Date().toLocaleString();
+    const lines = [];
+
+    lines.push('='.repeat(60));
+    lines.push('  SCAN AUTO-CROP REPORT');
+    lines.push('='.repeat(60));
+    lines.push(`Generated: ${now}`);
+    if (d.output_folder) lines.push(`Output:    ${d.output_folder}`);
+    lines.push('');
+
+    lines.push('SUMMARY');
+    lines.push('-'.repeat(40));
+    lines.push(`Total images:    ${d.total}`);
+    lines.push(`Cropped:         ${d.cropped}`);
+    lines.push(`Unchanged:       ${d.total - d.cropped}`);
+    lines.push(`Success rate:    ${d.success_rate}%`);
+    lines.push('');
+
+    lines.push('STRATEGY BREAKDOWN');
+    lines.push('-'.repeat(40));
+    for (const [strategy, count] of Object.entries(d.stats)) {
+        const pct = ((count / d.total) * 100).toFixed(1);
+        const info = STRATEGY_INFO[strategy];
+        const label = info ? info.label : formatStrategy(strategy);
+        lines.push(`  ${label.padEnd(22)} ${String(count).padStart(4)}  (${pct}%)`);
+    }
+    lines.push('');
+
+    lines.push('STRATEGY GLOSSARY');
+    lines.push('-'.repeat(40));
+    for (const [strategy, count] of Object.entries(d.stats)) {
+        const info = STRATEGY_INFO[strategy];
+        if (info) {
+            lines.push(`[${info.label}]`);
+            lines.push(`  ${info.desc}`);
+            lines.push('');
+        }
+    }
+
+    lines.push('PER-IMAGE RESULTS');
+    lines.push('-'.repeat(40));
+    lines.push(`${'Filename'.padEnd(28)} ${'Strategy'.padEnd(16)} ${'Original'.padEnd(12)} ${'Cropped'.padEnd(12)}`);
+    lines.push('-'.repeat(70));
+
+    for (const r of d.results) {
+        const orig = r.original_size ? `${r.original_size[0]}x${r.original_size[1]}` : 'N/A';
+        const crop = r.cropped_size ? `${r.cropped_size[0]}x${r.cropped_size[1]}` : 'N/A';
+        lines.push(`${r.filename.padEnd(28)} ${r.strategy.padEnd(16)} ${orig.padEnd(12)} ${crop.padEnd(12)}`);
+    }
+
+    lines.push('');
+    lines.push('='.repeat(60));
+    lines.push('  Scan Auto-Crop by @msamuslim101');
+    lines.push('  https://github.com/msamuslim101/scan-autocrop');
+    lines.push('='.repeat(60));
+
+    // Download as .txt
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `crop-report-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
 }

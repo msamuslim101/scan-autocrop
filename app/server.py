@@ -194,15 +194,70 @@ async def crop_folder(folder_path: str = Form(...)):
     total = len(results)
     cropped_count = sum(1 for r in results
                         if r["strategy"] not in ("original", "no_crop_needed", "error_fallback"))
+    success_rate = round(cropped_count / total * 100, 1) if total > 0 else 0
+
+    # Auto-save report to the output folder
+    report_path = _save_report(output_folder, total, cropped_count, success_rate, stats, results)
 
     return {
         "total": total,
         "cropped": cropped_count,
         "output_folder": output_folder,
-        "success_rate": round(cropped_count / total * 100, 1) if total > 0 else 0,
+        "report_path": report_path,
+        "success_rate": success_rate,
         "stats": stats,
         "results": results,
     }
+
+
+def _save_report(output_folder, total, cropped, rate, stats, results):
+    """Save a plain-text crop report inside the output folder."""
+    from datetime import datetime
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    lines = []
+
+    lines.append("=" * 60)
+    lines.append("  SCAN AUTO-CROP REPORT")
+    lines.append("=" * 60)
+    lines.append(f"Generated: {now}")
+    lines.append(f"Output:    {output_folder}")
+    lines.append("")
+
+    lines.append("SUMMARY")
+    lines.append("-" * 40)
+    lines.append(f"Total images:    {total}")
+    lines.append(f"Cropped:         {cropped}")
+    lines.append(f"Unchanged:       {total - cropped}")
+    lines.append(f"Success rate:    {rate}%")
+    lines.append("")
+
+    lines.append("STRATEGY BREAKDOWN")
+    lines.append("-" * 40)
+    for strategy, count in sorted(stats.items(), key=lambda x: -x[1]):
+        pct = round(count / total * 100, 1) if total > 0 else 0
+        lines.append(f"  {strategy:22s} {count:4d}  ({pct}%)")
+    lines.append("")
+
+    lines.append("PER-IMAGE RESULTS")
+    lines.append("-" * 40)
+    lines.append(f"{'Filename':28s} {'Strategy':16s} {'Original':12s} {'Cropped':12s}")
+    lines.append("-" * 70)
+    for r in results:
+        orig = f"{r['original_size'][0]}x{r['original_size'][1]}" if r.get("original_size") else "N/A"
+        crop = f"{r['cropped_size'][0]}x{r['cropped_size'][1]}" if r.get("cropped_size") else "N/A"
+        lines.append(f"{r['filename']:28s} {r['strategy']:16s} {orig:12s} {crop:12s}")
+
+    lines.append("")
+    lines.append("=" * 60)
+    lines.append("  Scan Auto-Crop by @msamuslim101")
+    lines.append("  https://github.com/msamuslim101/scan-autocrop")
+    lines.append("=" * 60)
+
+    report_file = os.path.join(output_folder, "crop-report.txt")
+    with open(report_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+
+    return report_file
 
 
 # ---------------------------------------------------------------------------

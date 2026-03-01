@@ -1,0 +1,159 @@
+============================================================
+  SCAN AUTO-CROP REPORT
+============================================================
+Generated: 2026-03-01 11:59:12
+Output:    C:\Users\sohai\Desktop\backup - scan project srm\scan project SRM\part2\one - Cropped
+
+SUMMARY
+----------------------------------------
+Total images:    129
+Cropped:         83
+Unchanged:       46
+Success rate:    64.3%
+
+STRATEGY BREAKDOWN
+----------------------------------------
+  original                 46  (35.7%)
+  canny_edge               40  (31.0%)
+  pro_contour              35  (27.1%)
+  pro_rect                  5  (3.9%)
+  gradient                  2  (1.6%)
+  saturation                1  (0.8%)
+
+PER-IMAGE RESULTS
+----------------------------------------
+Filename                     Strategy         Original     Cropped     
+----------------------------------------------------------------------
+Scan_0001.jpg                original         667x999      667x999     
+Scan_0002.jpg                canny_edge       665x999      482x979     
+Scan_0003.jpg                original         665x999      665x999     
+Scan_0004.jpg                pro_contour      667x1001     647x926     
+Scan_0005.jpg                canny_edge       662x1000     567x910     
+Scan_0006.jpg                original         999x675      999x675     
+Scan_0007.jpg                pro_contour      998x666      957x646     
+Scan_0008.jpg                original         669x1000     669x1000    
+Scan_0009.jpg                original         998x669      998x669     
+Scan_0010.jpg                original         998x668      998x668     
+Scan_0011.jpg                original         670x999      670x999     
+Scan_0012.jpg                pro_contour      998x673      934x653     
+Scan_0013.jpg                original         997x670      997x670     
+Scan_0014.jpg                canny_edge       998x672      867x652     
+Scan_0015.jpg                canny_edge       996x675      976x630     
+Scan_0016.jpg                canny_edge       997x666      977x612     
+Scan_0017.jpg                original         996x663      996x663     
+Scan_0018.jpg                canny_edge       996x676      976x627     
+Scan_0019.jpg                original         999x669      999x669     
+Scan_0020.jpg                canny_edge       995x667      918x552     
+Scan_0021.jpg                original         661x1001     661x1001    
+Scan_0022.jpg                original         998x666      998x666     
+Scan_0023.jpg                original         996x676      996x676     
+Scan_0024.jpg                pro_rect         998x672      975x643     
+Scan_0025.jpg                original         664x1000     664x1000    
+Scan_0026.jpg                original         662x1001     662x1001    
+Scan_0027.jpg                original         665x999      665x999     
+Scan_0028.jpg                original         996x663      996x663     
+Scan_0029.jpg                original         996x672      996x672     
+Scan_0030.jpg                original         996x675      996x675     
+Scan_0031.jpg                original         996x666      996x666     
+Scan_0032.jpg                original         999x674      999x674     
+Scan_0033.jpg                pro_contour      669x999      649x889     
+Scan_0034.jpg                original         996x664      996x664     
+Scan_0035.jpg                pro_contour      660x1000     640x875     
+Scan_0036.jpg                pro_rect         996x673      901x653     
+Scan_0037.jpg                original         998x668      998x668     
+Scan_0038.jpg                original         998x669      998x669     
+Scan_0039.jpg                canny_edge       665x1002     645x934     
+Scan_0040.jpg                canny_edge       670x1000     650x573     
+Scan_0041.jpg                canny_edge       673x999      463x964     
+Scan_0042.jpg                canny_edge       999x671      939x651     
+Scan_0043.jpg                canny_edge       999x668      979x633     
+Scan_0044.jpg                canny_edge       995x661      795x641     
+Scan_0045.jpg                pro_rect         999x672      909x652     
+Scan_0046.jpg                canny_edge       676x1001     655x981     
+Scan_0047.jpg                original         664x999      664x999     
+Scan_0048.jpg                original         667x1000     667x1000    
+Scan_0049.jpg                original         663x1000     663x1000    
+Scan_0050.jpg                original         672x1004     672x1004    
+Scan_0051.jpg                canny_edge       1000x670     980x532     
+Scan_0052.jpg                original         999x670      999x670     
+Scan_0053.jpg                canny_edge       998x669      978x598     
+Scan_0054.jpg                original         667x1001     667x1001    
+Scan_0055.jpg                pro_contour      664x1001     644x778     
+Scan_0056.jpg                original         661x1002     661x1002    
+Scan_0057.jpg                pro_contour      669x1211     649x989     
+Scan_0058.jpg                original         669x999      669x999     
+Scan_0059.jpg                canny_edge       670x999      650x682     
+Scan_0060.jpg                canny_edge       995x669      974x649     
+Scan_0061.jpg                original         999x667      999x667     
+Scan_0062.jpg                canny_edge       665x1001     645x975     
+Scan_0063.jpg                canny_edge       999x674      916x654     
+Scan_0064.jpg                canny_edge       999x672      955x652     
+Scan_0065.jpg                canny_edge       995x668      925x648     
+Scan_0066.jpg                original         998x665      998x665     
+Scan_0067.jpg                pro_contour      996x671      878x651     
+Scan_0068.jpg                pro_contour      1699x2338    986x673     
+Scan_0069.jpg                pro_rect         1699x2338    656x1000    
+Scan_0070.jpg                gradient         1699x2338    1005x2338   
+Scan_0071.jpg                pro_contour      1000x670     766x635     
+Scan_0072.jpg                canny_edge       667x1003     647x936     
+Scan_0073.jpg                canny_edge       998x671      978x593     
+Scan_0074.jpg                pro_contour      998x679      812x659     
+Scan_0075.jpg                pro_contour      668x1001     648x970     
+Scan_0076.jpg                pro_contour      1000x674     980x562     
+Scan_0077.jpg                original         1000x672     1000x672    
+Scan_0078.jpg                canny_edge       998x673      978x623     
+Scan_0079.jpg                canny_edge       1001x674     897x654     
+Scan_0080.jpg                original         998x671      998x671     
+Scan_0081.jpg                original         670x1002     670x1002    
+Scan_0082.jpg                pro_contour      997x1367     977x677     
+Scan_0083.jpg                pro_contour      1001x671     334x651     
+Scan_0084.jpg                canny_edge       998x676      947x656     
+Scan_0085.jpg                pro_contour      999x676      778x656     
+Scan_0086.jpg                pro_contour      670x1351     650x969     
+Scan_0087.jpg                pro_contour      672x1003     652x951     
+Scan_0088.jpg                original         668x1001     668x1001    
+Scan_0089.jpg                pro_contour      670x940      650x920     
+Scan_0090.jpg                canny_edge       673x1001     653x931     
+Scan_0091.jpg                original         999x675      999x675     
+Scan_0092.jpg                canny_edge       672x1004     652x950     
+Scan_0093.jpg                pro_contour      997x672      892x652     
+Scan_0094.jpg                pro_contour      669x1002     630x656     
+Scan_0095.jpg                pro_contour      997x690      831x670     
+Scan_0096.jpg                pro_contour      997x675      796x655     
+Scan_0097.jpg                canny_edge       1000x674     954x654     
+Scan_0098.jpg                pro_contour      998x674      978x633     
+Scan_0099.jpg                pro_contour      998x674      821x654     
+Scan_0100.jpg                pro_contour      999x676      611x610     
+Scan_0101.jpg                canny_edge       999x670      819x587     
+Scan_0102.jpg                pro_contour      998x672      978x550     
+Scan_0103.jpg                canny_edge       999x672      979x419     
+Scan_0104.jpg                pro_rect         996x1349     976x679     
+Scan_0105.jpg                pro_contour      997x673      805x653     
+Scan_0106.jpg                original         999x671      999x671     
+Scan_0107.jpg                original         999x673      999x673     
+Scan_0108.jpg                original         998x675      998x675     
+Scan_0109.jpg                original         999x672      999x672     
+Scan_0110.jpg                canny_edge       1000x673     789x653     
+Scan_0111.jpg                canny_edge       669x999      437x979     
+Scan_0112.jpg                canny_edge       669x1003     451x983     
+Scan_0113.jpg                canny_edge       680x1002     509x928     
+Scan_0114.jpg                pro_contour      670x1335     650x1001    
+Scan_0115.jpg                canny_edge       998x670      863x650     
+Scan_0116.jpg                original         662x1000     662x1000    
+Scan_0117.jpg                canny_edge       998x668      822x648     
+Scan_0118.jpg                pro_contour      672x1001     652x908     
+Scan_0119.jpg                pro_contour      1699x2338    987x672     
+Scan_0120.jpg                pro_contour      1699x2338    662x1000    
+Scan_0121.jpg                gradient         1699x2338    1006x2338   
+Scan_0122.jpg                original         1699x2338    1699x2338   
+Scan_0123.jpg                saturation       1699x2338    989x2084    
+Scan_0124.jpg                pro_contour      994x698      974x584     
+Scan_0125.jpg                pro_contour      984x698      964x666     
+Scan_0126.jpg                original         1017x701     1017x701    
+Scan_0127.jpg                canny_edge       686x999      666x962     
+Scan_0128.jpg                canny_edge       674x999      654x863     
+Scan_0129.jpg                pro_contour      402x569      339x315     
+
+============================================================
+  End of Report
+============================================================
