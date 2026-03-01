@@ -183,11 +183,54 @@ def _gradient_line_scan(img):
 
 
 # ---------------------------------------------------------------------------
-# Main Crop Engine — 5-Tier Fallback
+# Safety Guard: prevent over-cropping on pre-cropped photos.
+#
+# Full-page scans from flatbed scanners have large dimensions (2000+ px on
+# their shortest side). These are expected to have big borders, so we allow
+# aggressive cropping (up to 70% area removal).
+#
+# Pre-cropped photos are smaller and should be protected. We only allow
+# removing up to 10% of area on these images.
+#
+# The MIN_SCAN_DIMENSION threshold distinguishes the two cases.
+# ---------------------------------------------------------------------------
+MIN_SCAN_DIMENSION = 2000   # pixels -- shortest side must exceed this for "full scan" mode
+SAFETY_LOOSE = 0.05         # full scans: keep at least 5% (photos can be small on large pages)
+SAFETY_STRICT = 0.90        # pre-cropped: keep at least 90% of area
+
+
+def _safe_crop(img, cropped, strategy):
+    """
+    Validate that the crop did not remove too much content.
+    Uses a stricter threshold for images that appear to be already cropped.
+    Returns (cropped, strategy) if safe, or (None, reason) if unsafe.
+    """
+    if cropped is None:
+        return None, strategy
+
+    h, w = img.shape[:2]
+    ch, cw = cropped.shape[:2]
+
+    crop_area_ratio = (cw * ch) / (w * h)
+
+    # Determine threshold based on original image size
+    min_dim = min(h, w)
+    threshold = SAFETY_LOOSE if min_dim >= MIN_SCAN_DIMENSION else SAFETY_STRICT
+
+    if crop_area_ratio < threshold:
+        return None, "rejected_overcrop"
+
+    return cropped, strategy
+
+
+# ---------------------------------------------------------------------------
+# Main Crop Engine — 5-Tier Fallback (with safety guard)
 # ---------------------------------------------------------------------------
 def crop_image(img):
     """
-    Production-grade cropping with 5-tier fallback.
+    Production-grade cropping with 5-tier fallback and safety guard.
+    
+    Any crop that removes more than 20% of image area is rejected.
     
     Returns:
         tuple: (cropped_image_or_None, strategy_name)
@@ -229,25 +272,31 @@ def crop_image(img):
                 strategy = "pro_contour"
 
             if (cw * ch) / image_area < 0.95:
-                return img[y:y+ch, x:x+cw], strategy
+                result, strategy = _safe_crop(img, img[y:y+ch, x:x+cw], strategy)
+                if result is not None:
+                    return result, strategy
 
     # --- TIER 2: Canny Edge ---
     result, strategy = _canny_edge_crop(img)
+    result, strategy = _safe_crop(img, result, strategy)
     if result is not None:
         return result, strategy
 
     # --- TIER 3: Variance ---
     result, strategy = _variance_based_crop(img)
+    result, strategy = _safe_crop(img, result, strategy)
     if result is not None:
         return result, strategy
 
     # --- TIER 4: Saturation ---
     result, strategy = _saturation_based_crop(img)
+    result, strategy = _safe_crop(img, result, strategy)
     if result is not None:
         return result, strategy
 
     # --- TIER 5: Gradient ---
     result, strategy = _gradient_line_scan(img)
+    result, strategy = _safe_crop(img, result, strategy)
     if result is not None:
         return result, strategy
 
