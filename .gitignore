@@ -43,3 +43,6 @@ tools/ext/
 *.zip
 *.bin
 *.param
+
+
+crop-report.txt
