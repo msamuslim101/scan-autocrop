@@ -71,7 +71,7 @@ def classify_tier(confidence):
 # ---------------------------------------------------------------------------
 # Route + Validate
 # ---------------------------------------------------------------------------
-def route_crop(original_img, cropped_img, strategy, confidence, validation):
+def route_crop(original_img, cropped_img, strategy, confidence, validation, progress_callback=None):
     """
     Route a crop result through the three-tier system.
 
@@ -81,6 +81,7 @@ def route_crop(original_img, cropped_img, strategy, confidence, validation):
         strategy: CV strategy name
         confidence: int 0-100
         validation: dict from validators
+        progress_callback: Optional callable(step: str, detail: str)
 
     Returns:
         dict: Complete routing result with keys:
@@ -112,6 +113,8 @@ def route_crop(original_img, cropped_img, strategy, confidence, validation):
                     model = llm_cfg.get("model", "qwen3.5:2b")
                     timeout = llm_cfg.get("timeout_seconds", 15)
 
+                    if progress_callback:
+                        progress_callback("llm", f"Analyzing with LLM ({model}, takes ~30s)...")
                     logger.info(f"No-crop check: asking LLM if border exists")
                     llm_result = validate_with_llm(
                         original_img, model=model, timeout=timeout
@@ -185,6 +188,8 @@ def route_crop(original_img, cropped_img, strategy, confidence, validation):
         model = llm_cfg.get("model", "qwen3.5:2b")
         timeout = llm_cfg.get("timeout_seconds", 15)
 
+        if progress_callback:
+            progress_callback("llm", f"Validating crop with LLM ({model}, takes ~30s)...")
         logger.info(f"Tier 2: Calling LLM (confidence={confidence}, model={model})")
         llm_result = validate_with_llm(
             original_img, model=model, timeout=timeout

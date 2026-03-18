@@ -11,7 +11,7 @@ confidence:
 
 llm:
   enabled: true
-  model: "moondream"
+  model: "qwen3.5:2b"
   timeout_seconds: 15
   # What to do if LLM fails (timeout, error, unavailable)
   # "SKIP" = keep original (safest), "SAFE" = assume crop is fine

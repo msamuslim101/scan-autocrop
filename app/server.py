@@ -10,6 +10,7 @@ import base64
 import io
 import tempfile
 from pathlib import Path
+from typing import Optional
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
 from fastapi.staticfiles import StaticFiles
@@ -57,6 +58,15 @@ def _make_thumbnail(img_path, max_size=300):
 @app.get("/api/status")
 def health_check():
     return {"status": "ok", "engine": "5-tier-fallback"}
+
+
+# Progress tracking for the frontend UI (PID -> step details)
+_progress_store = {}
+
+@app.get("/api/progress/{progress_id}")
+def get_progress(progress_id: str):
+    """Get the current progress step for a long-running crop operation."""
+    return _progress_store.get(progress_id, {"step": "unknown", "detail": ""})
 
 
 @app.get("/api/llm-status")
@@ -119,7 +129,7 @@ async def upload_files(files: list[UploadFile] = File(...)):
 
 
 @app.post("/api/crop")
-async def crop_files(session_id: str = Form(...)):
+async def crop_files(session_id: str = Form(...), progress_id: Optional[str] = Form(None)):
     """
     Crop all uploaded images in a session.
     Returns results with thumbnails of cropped images.
@@ -139,11 +149,15 @@ async def crop_files(session_id: str = Form(...)):
     results = []
     stats = {}
 
+    def progress_cb(step, detail):
+        if progress_id:
+            _progress_store[progress_id] = {"step": step, "detail": detail}
+
     for filename in files:
         input_path = os.path.join(session_dir, filename)
         output_path = os.path.join(output_dir, filename)
 
-        result = process_single_image(input_path, output_path)
+        result = process_single_image(input_path, output_path, progress_callback=progress_cb)
 
         # Generate thumbnail of cropped result
         thumb = _make_thumbnail(output_path)
@@ -186,7 +200,7 @@ async def download_file(session_id: str, filename: str):
 
 
 @app.post("/api/crop-folder")
-async def crop_folder(folder_path: str = Form(...)):
+async def crop_folder(folder_path: str = Form(...), progress_id: Optional[str] = Form(None)):
     """
     Crop all images in a local folder path.
     Saves output to '{folder} - Cropped/' next to originals.
@@ -205,11 +219,15 @@ async def crop_folder(folder_path: str = Form(...)):
     results = []
     stats = {}
 
+    def progress_cb(step, detail):
+        if progress_id:
+            _progress_store[progress_id] = {"step": step, "detail": detail}
+
     for i, filename in enumerate(files, 1):
         input_path = os.path.join(folder_path, filename)
         output_path = os.path.join(output_folder, filename)
 
-        result = process_single_image(input_path, output_path)
+        result = process_single_image(input_path, output_path, progress_callback=progress_cb)
         results.append(result)
         s = result["strategy"]
         stats[s] = stats.get(s, 0) + 1

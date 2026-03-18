@@ -260,11 +260,32 @@ async function handleFileUpload(files) {
     showProgress('Uploading...', `Sending ${files.length} images to the server`);
     setStatus('Uploading...');
 
-    try {
-        // Step 1: Upload
-        const formData = new FormData();
-        files.forEach(f => formData.append('files', f));
+    const formData = new FormData();
+    files.forEach(f => formData.append('files', f));
 
+    const progressId = Date.now().toString() + Math.random().toString(36).substring(7);
+    formData.append('progress_id', progressId);
+
+    showProgress('Uploading...', 'Preparing images...');
+
+    let pollInterval;
+
+    try {
+        pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`${API}/api/progress/${progressId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.detail) {
+                        let pct = 30;
+                        if (data.step === 'llm') pct = 60;
+                        updateProgress(data.detail, pct);
+                    }
+                }
+            } catch (e) { /* Ignore polling errors */ }
+        }, 1000);
+
+        // Step 1: Upload
         const uploadRes = await fetch(`${API}/api/upload`, {
             method: 'POST',
             body: formData,
@@ -280,6 +301,7 @@ async function handleFileUpload(files) {
         // Step 2: Crop
         const cropForm = new FormData();
         cropForm.append('session_id', currentSessionId);
+        cropForm.append('progress_id', progressId); // Also pass progress_id to crop
 
         const cropRes = await fetch(`${API}/api/crop`, {
             method: 'POST',
@@ -304,6 +326,10 @@ async function handleFileUpload(files) {
         setStatus('Error', false);
         console.error('Processing error:', err);
         alert(`Error: ${err.message}`);
+    } finally {
+        if (pollInterval) {
+            clearInterval(pollInterval);
+        }
     }
 }
 
@@ -311,12 +337,33 @@ async function handleFileUpload(files) {
 // Folder Crop Flow
 // ---------------------------------------------------------------------------
 async function handleFolderCrop(folderPath) {
-    showProgress('Processing Folder...', `Cropping images in: ${folderPath}`);
     setStatus('Processing folder...');
 
+    const formData = new FormData();
+    formData.append('folder_path', folderPath);
+    const progressId = Date.now().toString() + Math.random().toString(36).substring(7);
+    formData.append('progress_id', progressId);
+
+    showProgress('Processing Folder...', 'Starting batch job...');
+
+    // Check if path exists early if possible? For now rely on server 400.
+
+    let pollInterval;
+
     try {
-        const formData = new FormData();
-        formData.append('folder_path', folderPath);
+        pollInterval = setInterval(async () => {
+            try {
+                const res = await fetch(`${API}/api/progress/${progressId}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.detail) {
+                        let pct = 40;
+                        if (data.step === 'llm') pct = 70;
+                        updateProgress(data.detail, pct);
+                    }
+                }
+            } catch (e) { /* Ignore polling errors */ }
+        }, 1000);
 
         const res = await fetch(`${API}/api/crop-folder`, {
             method: 'POST',

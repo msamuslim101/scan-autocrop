@@ -61,44 +61,22 @@ def _encode_image(img):
     from PIL import Image
     pil_img = Image.fromarray(rgb)
 
-    # Resize large images to save memory and speed up inference
-    max_dim = 1024
+    # Resize large images for speed (smaller = faster inference)
+    max_dim = 512
     if max(pil_img.size) > max_dim:
         ratio = max_dim / max(pil_img.size)
         new_size = (int(pil_img.width * ratio), int(pil_img.height * ratio))
         pil_img = pil_img.resize(new_size, Image.LANCZOS)
 
     buffer = io.BytesIO()
-    pil_img.save(buffer, format="JPEG", quality=80)
+    pil_img.save(buffer, format="JPEG", quality=70)
     return base64.b64encode(buffer.getvalue()).decode("utf-8")
 
 
 # ---------------------------------------------------------------------------
 # The Prompt
 # ---------------------------------------------------------------------------
-VALIDATION_PROMPT = """You are a photo crop validator. I will show you a scanned photo.
-
-This image was scanned on a flatbed scanner. The scanning process adds a white or light gray border around the actual photo. Our software detected a crop boundary and wants to remove the border.
-
-Look at this image carefully and answer:
-
-1. Is there a visible scanner border (white/gray area) around the photo?
-2. Would cropping to remove that border cut into any faces, text, or important content?
-3. Is this image a full page scan with a border, or an already-cropped photo without a border?
-
-Reply with EXACTLY one line in this format:
-VERDICT: SAFE or RISKY
-REASON: one short sentence explaining why
-
-Example good responses:
-VERDICT: SAFE
-REASON: Clear white border visible on all sides, no content would be lost.
-
-VERDICT: RISKY
-REASON: No visible scanner border, this appears to be an already-cropped photo.
-
-VERDICT: SAFE
-REASON: Scanner border visible, all faces and text are well inside the photo area."""
+VALIDATION_PROMPT = """Does this scanned photo have a white or gray scanner border around the photo content? Answer SAFE if a border exists and can be cropped, or RISKY if no border exists. Reply: VERDICT: SAFE or RISKY, then REASON: one sentence. /no_think"""
 
 
 def validate_with_llm(original_img, model="qwen3.5:2b", timeout=15):
@@ -141,7 +119,7 @@ def validate_with_llm(original_img, model="qwen3.5:2b", timeout=15):
             }],
             options={
                 "temperature": 0.1,  # Low temp for consistent responses
-                "num_predict": 100,  # Short response only
+                "num_predict": 500,  # Enough for thinking + response
             },
         )
 
@@ -163,22 +141,49 @@ def validate_with_llm(original_img, model="qwen3.5:2b", timeout=15):
 
 def _parse_response(text, elapsed_ms):
     """Parse the LLM response into a structured result."""
-    lines = text.strip().split("\n")
+    import re
+    text = text.strip()
+    if not text:
+        return {
+            "verdict": "SKIP",
+            "confidence": "LOW",
+            "reason": "empty response",
+            "time_ms": elapsed_ms,
+        }
+
+    # Handle single-word responses (e.g., just "SAFE" or "RISKY")
+    text_upper = text.upper().strip()
+    if text_upper in ("SAFE", "RISKY"):
+        return {
+            "verdict": text_upper,
+            "confidence": "HIGH",
+            "reason": text_upper.lower(),
+            "time_ms": elapsed_ms,
+        }
+
     verdict = "SKIP"
-    reason = text[:120]
+    reason = "Undetermined"
+    
+    # Use regex to find exactly VERDICT: [SAFE/RISKY] anywhere in text
+    v_match = re.search(r'VERDICT:\s*(SAFE|RISKY)', text_upper)
+    if v_match:
+        verdict = v_match.group(1)
+    else:
+        # Fallback to checking if the words exist
+        if "SAFE" in text_upper and "RISKY" not in text_upper:
+            verdict = "SAFE"
+        elif "RISKY" in text_upper and "SAFE" not in text_upper:
+            verdict = "RISKY"
 
-    for line in lines:
-        line_upper = line.strip().upper()
-        if line_upper.startswith("VERDICT:"):
-            val = line_upper.replace("VERDICT:", "").strip()
-            if "SAFE" in val:
-                verdict = "SAFE"
-            elif "RISKY" in val:
-                verdict = "RISKY"
-        elif line.strip().upper().startswith("REASON:"):
-            reason = line.strip()[7:].strip()
+    # Use regex to find REASON: [text] up to end of line or string
+    # case insensitive search
+    r_match = re.search(r'REASON:\s*(.+?)(?:\n|$)', text, flags=re.IGNORECASE)
+    if r_match:
+        reason = r_match.group(1).strip()
+    else:
+        # Fallback: limit to 120 chars if no clean REASON found
+        reason = text[:120].strip()
 
-    # Determine confidence based on how clean the response was
     confidence = "HIGH" if verdict in ("SAFE", "RISKY") else "LOW"
 
     return {

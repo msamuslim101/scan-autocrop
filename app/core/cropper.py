@@ -377,9 +377,12 @@ def process_single_image(input_path, output_path, progress_callback=None):
             tier, _ = classify_tier(confidence)
             if tier == 2:
                 progress_callback("llm", f"LLM validating {filename}")
+          # Fallback to keep original if everything failed
+        if cropped is None:
+            strategy = "error_fallback"
 
         # Route through three-tier system (includes LLM for Tier 2)
-        routed = route_crop(img, cropped, strategy, confidence, validation)
+        routed = route_crop(img, cropped, strategy, confidence, validation, progress_callback=progress_callback)
 
         final_img = routed["cropped_img"]
         strategy = routed["strategy"]
