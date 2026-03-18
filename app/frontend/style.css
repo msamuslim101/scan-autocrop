@@ -621,6 +621,78 @@ body {
     opacity: 0.85;
 }
 
+/* LLM Reason */
+.llm-reason {
+    font-size: 0.68rem;
+    color: oklch(65% 0.12 250);
+    font-family: var(--font-mono);
+    padding: 3px 0;
+    opacity: 0.85;
+}
+
+/* Tier Badges */
+.tier-badge {
+    font-size: 0.6rem;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.tier-badge.tier-1 {
+    background: oklch(30% 0.06 150);
+    color: oklch(75% 0.18 150);
+}
+
+.tier-badge.tier-2-pass {
+    background: oklch(30% 0.06 250);
+    color: oklch(75% 0.15 250);
+}
+
+.tier-badge.tier-2-fail {
+    background: oklch(30% 0.06 25);
+    color: oklch(70% 0.15 25);
+}
+
+.tier-badge.tier-2-skip {
+    background: oklch(30% 0.04 85);
+    color: oklch(65% 0.10 85);
+}
+
+.tier-badge.tier-3 {
+    background: oklch(30% 0.08 55);
+    color: oklch(70% 0.15 55);
+}
+
+.tier-badge.tier-none {
+    background: oklch(20% 0 0);
+    color: oklch(50% 0 0);
+}
+
+/* LLM Status Indicator */
+.llm-indicator {
+    font-size: 0.7rem;
+    font-family: var(--font-mono);
+    font-weight: 500;
+    padding: 4px 10px;
+    border-radius: 999px;
+    margin-left: 12px;
+}
+
+.llm-indicator.llm-connected {
+    background: oklch(25% 0.06 250);
+    color: oklch(70% 0.15 250);
+    border: 1px solid oklch(35% 0.08 250);
+}
+
+.llm-indicator.llm-disconnected {
+    background: oklch(20% 0.02 0);
+    color: oklch(50% 0.05 0);
+    border: 1px solid oklch(30% 0.03 0);
+}
+
 .image-card-size {
     font-size: 0.72rem;
     color: var(--text-muted);

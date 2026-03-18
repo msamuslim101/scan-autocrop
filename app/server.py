@@ -59,6 +59,24 @@ def health_check():
     return {"status": "ok", "engine": "5-tier-fallback"}
 
 
+@app.get("/api/llm-status")
+def llm_status():
+    """Check if LLM (Ollama) is available for Tier 2 validation."""
+    try:
+        from core.llm_validator import is_available
+        from core.router import get_config
+        cfg = get_config()
+        llm_cfg = cfg.get("llm", {})
+        available = is_available()
+        return {
+            "available": available,
+            "enabled": llm_cfg.get("enabled", True),
+            "model": llm_cfg.get("model", "qwen3.5:2b"),
+        }
+    except Exception:
+        return {"available": False, "enabled": False, "model": "unknown"}
+
+
 @app.post("/api/upload")
 async def upload_files(files: list[UploadFile] = File(...)):
     """
@@ -138,9 +156,14 @@ async def crop_files(session_id: str = Form(...)):
         s = result["strategy"]
         stats[s] = stats.get(s, 0) + 1
 
+    SKIP_STRATEGIES = {
+        "original", "no_crop_needed", "error_fallback",
+        "llm_rejected", "llm_skip", "llm_unavailable", "flagged_review",
+    }
     total = len(results)
     cropped_count = sum(1 for r in results
-                        if r["strategy"] not in ("original", "no_crop_needed", "error_fallback"))
+                        if r["strategy"] not in SKIP_STRATEGIES
+                        and not r["strategy"].startswith("rejected_"))
 
     return {
         "session_id": session_id,
@@ -182,7 +205,7 @@ async def crop_folder(folder_path: str = Form(...)):
     results = []
     stats = {}
 
-    for filename in files:
+    for i, filename in enumerate(files, 1):
         input_path = os.path.join(folder_path, filename)
         output_path = os.path.join(output_folder, filename)
 
@@ -191,9 +214,23 @@ async def crop_folder(folder_path: str = Form(...)):
         s = result["strategy"]
         stats[s] = stats.get(s, 0) + 1
 
+        # Terminal progress
+        tier_label = result.get("tier_label", "")
+        llm_info = ""
+        if result.get("llm_result"):
+            lr = result["llm_result"]
+            llm_info = f" | LLM: {lr['verdict']} ({lr['time_ms']}ms)"
+        print(f"  [{i}/{len(files)}] {filename} -> {s} "
+              f"(conf={result.get('confidence', '?')}, tier={tier_label}){llm_info}")
+
+    SKIP_STRATEGIES = {
+        "original", "no_crop_needed", "error_fallback",
+        "llm_rejected", "llm_skip", "llm_unavailable", "flagged_review",
+    }
     total = len(results)
     cropped_count = sum(1 for r in results
-                        if r["strategy"] not in ("original", "no_crop_needed", "error_fallback"))
+                        if r["strategy"] not in SKIP_STRATEGIES
+                        and not r["strategy"].startswith("rejected_"))
     success_rate = round(cropped_count / total * 100, 1) if total > 0 else 0
 
     # Auto-save report to the output folder
@@ -240,14 +277,15 @@ def _save_report(output_folder, total, cropped, rate, stats, results):
 
     lines.append("PER-IMAGE RESULTS")
     lines.append("-" * 40)
-    lines.append(f"{'Filename':28s} {'Strategy':16s} {'Conf':5s} {'Valid':8s} {'Original':12s} {'Cropped':12s}")
-    lines.append("-" * 85)
+    lines.append(f"{'Filename':28s} {'Strategy':16s} {'Conf':5s} {'Valid':8s} {'Tier':10s} {'Original':12s} {'Cropped':12s}")
+    lines.append("-" * 95)
     for r in results:
         orig = f"{r['original_size'][0]}x{r['original_size'][1]}" if r.get("original_size") else "N/A"
         crop = f"{r['cropped_size'][0]}x{r['cropped_size'][1]}" if r.get("cropped_size") else "N/A"
         conf = str(r.get("confidence", "-"))
         valid = "pass" if r.get("validation", {}).get("passed", True) else "FAIL"
-        lines.append(f"{r['filename']:28s} {r['strategy']:16s} {conf:>5s} {valid:8s} {orig:12s} {crop:12s}")
+        tier = r.get("tier_label", "-")
+        lines.append(f"{r['filename']:28s} {r['strategy']:16s} {conf:>5s} {valid:8s} {tier:10s} {orig:12s} {crop:12s}")
 
     lines.append("")
     lines.append("=" * 60)

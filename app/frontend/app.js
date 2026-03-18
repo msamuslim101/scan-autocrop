@@ -35,7 +35,26 @@ const resultsCount = document.getElementById('resultsCount');
 // State
 // ---------------------------------------------------------------------------
 let currentSessionId = null;
-let lastCropData = null;  // Store for export
+let lastCropData = null;
+let llmAvailable = false;
+
+// Check LLM status on load
+async function checkLlmStatus() {
+    try {
+        const res = await fetch(`${API}/api/llm-status`);
+        const data = await res.json();
+        llmAvailable = data.available && data.enabled;
+        const indicator = document.getElementById('llmIndicator');
+        if (indicator) {
+            indicator.className = llmAvailable ? 'llm-indicator llm-connected' : 'llm-indicator llm-disconnected';
+            indicator.title = llmAvailable ? `LLM: ${data.model} (connected)` : 'LLM: disconnected';
+            indicator.textContent = llmAvailable ? `LLM: ${data.model}` : 'LLM: offline';
+        }
+    } catch (e) {
+        llmAvailable = false;
+    }
+}
+checkLlmStatus();  // Store for export
 
 // ---------------------------------------------------------------------------
 // Strategy Glossary
@@ -92,6 +111,30 @@ const STRATEGY_INFO = {
     rejected_overcrop: {
         label: 'Rejected (Over-Crop)',
         desc: 'The crop was rejected by the safety guard because it would have removed too much of the image area.'
+    },
+    llm_approved: {
+        label: 'LLM Approved',
+        desc: 'The LLM reviewed this crop and confirmed it is safe. Only border/background was removed.'
+    },
+    llm_rejected: {
+        label: 'LLM Rejected',
+        desc: 'The LLM detected that cropping would remove important content. The original image was kept.'
+    },
+    llm_skip: {
+        label: 'LLM Skipped',
+        desc: 'The LLM could not provide a clear verdict. The original image was kept to prevent data loss.'
+    },
+    llm_unavailable: {
+        label: 'LLM Unavailable',
+        desc: 'Ollama was not running during processing. The original image was kept as a safety fallback.'
+    },
+    flagged_review: {
+        label: 'Flagged for Review',
+        desc: 'Low confidence crop. The image was flagged for manual review and the original was preserved.'
+    },
+    llm_border_detected: {
+        label: 'LLM: Border Detected',
+        desc: 'The CV engine could not detect a border, but the LLM vision model confirmed one exists. The original was kept -- manual crop may be needed.'
     }
 };
 
@@ -360,8 +403,10 @@ function createImageCard(result) {
     card.className = 'image-card';
 
     const isChanged = result.strategy !== 'original' && result.strategy !== 'no_crop_needed'
-        && !result.strategy.startsWith('rejected_');
-    const isRejected = result.strategy.startsWith('rejected_');
+        && !result.strategy.startsWith('rejected_')
+        && !['llm_rejected', 'llm_skip', 'llm_unavailable', 'flagged_review'].includes(result.strategy);
+    const isRejected = result.strategy.startsWith('rejected_')
+        || ['llm_rejected', 'llm_skip', 'llm_unavailable', 'flagged_review'].includes(result.strategy);
     const sizeText = result.cropped_size
         ? `${result.cropped_size[0]}x${result.cropped_size[1]}`
         : '';
@@ -370,6 +415,16 @@ function createImageCard(result) {
     const validText = result.validation && !result.validation.passed
         ? result.validation.reason.replace(/_/g, ' ')
         : '';
+
+    // Tier badge
+    const tierLabel = result.tier_label || '';
+    const tierBadge = tierLabel ? _tierBadgeHTML(tierLabel) : '';
+
+    // LLM result info
+    let llmText = '';
+    if (result.llm_result && result.llm_result.verdict !== 'SKIP') {
+        llmText = `LLM: ${result.llm_result.verdict} -- ${result.llm_result.reason}`;
+    }
 
     card.innerHTML = `
         <div class="image-card-compare">
@@ -383,9 +438,11 @@ function createImageCard(result) {
             <div class="image-card-meta">
                 <span class="image-card-strategy ${isChanged ? '' : isRejected ? 'strategy-rejected' : 'strategy-original'}">${result.strategy}</span>
                 <span class="confidence-badge ${confClass}">${confidence}</span>
+                ${tierBadge}
                 <span class="image-card-size">${sizeText}</span>
             </div>
             ${validText ? `<div class="validation-reason">${validText}</div>` : ''}
+            ${llmText ? `<div class="llm-reason">${llmText}</div>` : ''}
         </div>
         <div class="image-card-actions">
             <a href="${API}/api/download/${currentSessionId}/${result.filename}" 
@@ -399,13 +456,32 @@ function createImageCard(result) {
     return card;
 }
 
+function _tierBadgeHTML(tierLabel) {
+    const labels = {
+        auto_approved: ['T1', 'tier-1'],
+        llm_approved: ['LLM', 'tier-2-pass'],
+        llm_rejected: ['LLM', 'tier-2-fail'],
+        llm_skip: ['LLM?', 'tier-2-skip'],
+        llm_unavailable: ['LLM?', 'tier-2-skip'],
+        llm_disabled: ['T1', 'tier-1'],
+        llm_border_detected: ['LLM!', 'tier-2-pass'],
+        llm_confirmed_no_crop: ['--', 'tier-none'],
+        flagged_review: ['REV', 'tier-3'],
+        no_crop: ['--', 'tier-none'],
+    };
+    const [text, cls] = labels[tierLabel] || [tierLabel, 'tier-none'];
+    return `<span class="tier-badge ${cls}" title="${tierLabel}">${text}</span>`;
+}
+
 function createFolderCard(result) {
     const card = document.createElement('div');
     card.className = 'image-card';
 
     const isChanged = result.strategy !== 'original' && result.strategy !== 'no_crop_needed'
-        && !result.strategy.startsWith('rejected_');
-    const isRejected = result.strategy.startsWith('rejected_');
+        && !result.strategy.startsWith('rejected_')
+        && !['llm_rejected', 'llm_skip', 'llm_unavailable', 'flagged_review'].includes(result.strategy);
+    const isRejected = result.strategy.startsWith('rejected_')
+        || ['llm_rejected', 'llm_skip', 'llm_unavailable', 'flagged_review'].includes(result.strategy);
     const origText = result.original_size
         ? `${result.original_size[0]}x${result.original_size[1]}`
         : '';
@@ -417,6 +493,13 @@ function createFolderCard(result) {
     const validText = result.validation && !result.validation.passed
         ? result.validation.reason.replace(/_/g, ' ')
         : '';
+    const tierLabel = result.tier_label || '';
+    const tierBadge = tierLabel ? _tierBadgeHTML(tierLabel) : '';
+
+    let llmText = '';
+    if (result.llm_result && result.llm_result.verdict !== 'SKIP') {
+        llmText = `LLM: ${result.llm_result.verdict} -- ${result.llm_result.reason}`;
+    }
 
     card.innerHTML = `
         <div class="image-card-info" style="padding-top: 20px;">
@@ -424,9 +507,11 @@ function createFolderCard(result) {
             <div class="image-card-meta">
                 <span class="image-card-strategy ${isChanged ? '' : isRejected ? 'strategy-rejected' : 'strategy-original'}">${result.strategy}</span>
                 <span class="confidence-badge ${confClass}">${confidence}</span>
+                ${tierBadge}
                 <span class="image-card-size">${origText} -> ${cropText}</span>
             </div>
             ${validText ? `<div class="validation-reason">${validText}</div>` : ''}
+            ${llmText ? `<div class="llm-reason">${llmText}</div>` : ''}
         </div>
     `;
 

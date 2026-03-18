@@ -330,15 +330,28 @@ def _finalize(img, cropped, strategy, crop_box, contour_count):
     return cropped, strategy, confidence, validation
 
 
-def process_single_image(input_path, output_path):
+def process_single_image(input_path, output_path, progress_callback=None):
     """
-    Process one image: crop and save at 100% JPEG quality.
+    Process one image: crop, route through three-tier system, save.
+
+    Args:
+        input_path: Path to input image
+        output_path: Path to save result
+        progress_callback: Optional callable(step: str, detail: str)
+            Called with progress updates for real-time UI feedback.
 
     Returns:
         dict with keys: success, strategy, confidence, validation,
+                        tier, tier_label, llm_result,
                         original_size, cropped_size, filename
     """
+    from core.router import route_crop
+
     filename = os.path.basename(input_path)
+
+    if progress_callback:
+        progress_callback("cv", f"Processing {filename}")
+
     img = cv2.imread(input_path)
 
     if img is None:
@@ -347,6 +360,7 @@ def process_single_image(input_path, output_path):
             "strategy": "read_error",
             "confidence": 0,
             "validation": {"passed": False, "reason": "read_error", "details": {}},
+            "tier": 0, "tier_label": "error", "llm_result": None,
             "filename": filename,
             "original_size": None,
             "cropped_size": None,
@@ -358,29 +372,49 @@ def process_single_image(input_path, output_path):
     try:
         cropped, strategy, confidence, validation = crop_image(img)
 
-        if cropped is not None:
-            ch, cw = cropped.shape[:2]
-            cropped_rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
+        if progress_callback:
+            from core.router import classify_tier
+            tier, _ = classify_tier(confidence)
+            if tier == 2:
+                progress_callback("llm", f"LLM validating {filename}")
+
+        # Route through three-tier system (includes LLM for Tier 2)
+        routed = route_crop(img, cropped, strategy, confidence, validation)
+
+        final_img = routed["cropped_img"]
+        strategy = routed["strategy"]
+
+        if final_img is not None:
+            ch, cw = final_img.shape[:2]
+            cropped_rgb = cv2.cvtColor(final_img, cv2.COLOR_BGR2RGB)
             Image.fromarray(cropped_rgb).save(output_path, quality=100, subsampling=0)
             cropped_size = (cw, ch)
         else:
-            # No crop needed or validators rejected -- save original
+            # No crop or rejected -- save original
             cv2.imwrite(output_path, img, [cv2.IMWRITE_JPEG_QUALITY, 100])
             cropped_size = original_size
-            if not strategy.startswith("rejected_"):
+            if not strategy.startswith("rejected_") and strategy not in (
+                "llm_rejected", "llm_skip", "llm_unavailable", "flagged_review"
+            ):
                 strategy = "original"
+
+        if progress_callback:
+            progress_callback("done", f"Finished {filename}")
 
         return {
             "success": True,
             "strategy": strategy,
-            "confidence": confidence,
-            "validation": validation,
+            "confidence": routed["confidence"],
+            "validation": routed["validation"],
+            "tier": routed["tier"],
+            "tier_label": routed["tier_label"],
+            "llm_result": routed["llm_result"],
             "filename": filename,
             "original_size": original_size,
             "cropped_size": cropped_size,
         }
 
-    except Exception:
+    except Exception as e:
         # Emergency fallback -- save original
         cv2.imwrite(output_path, img, [cv2.IMWRITE_JPEG_QUALITY, 100])
         return {
@@ -388,6 +422,7 @@ def process_single_image(input_path, output_path):
             "strategy": "error_fallback",
             "confidence": 0,
             "validation": {"passed": False, "reason": "exception", "details": {}},
+            "tier": 0, "tier_label": "error", "llm_result": None,
             "filename": filename,
             "original_size": original_size,
             "cropped_size": original_size,

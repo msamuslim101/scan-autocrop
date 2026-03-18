@@ -1,0 +1,24 @@
+# Scan Auto-Crop Configuration
+# =============================
+# All tunable thresholds in one place.
+
+confidence:
+  # Tier 1: High confidence -- auto-crop, skip LLM
+  tier1_threshold: 90
+  # Tier 2: Medium confidence -- validate with LLM
+  tier2_threshold: 40
+  # Below tier2 = Tier 3: flag for manual review, keep original
+
+llm:
+  enabled: true
+  model: "moondream"
+  timeout_seconds: 15
+  # What to do if LLM fails (timeout, error, unavailable)
+  # "SKIP" = keep original (safest), "SAFE" = assume crop is fine
+  fallback_on_error: "SKIP"
+
+validators:
+  # Only applied to pre-cropped photos (min dim < 2000px)
+  edge_variance_threshold: 500
+  histogram_correlation_threshold: 0.70
+  face_detection_enabled: true
