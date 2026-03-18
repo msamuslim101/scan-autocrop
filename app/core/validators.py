@@ -16,10 +16,23 @@ import os
 
 
 # ---------------------------------------------------------------------------
-# Thresholds (tunable)
+# Thresholds (tunable, resolution-aware)
 # ---------------------------------------------------------------------------
-EDGE_VARIANCE_THRESHOLD = 500       # Border variance above this = content, not scanner bed
-HISTOGRAM_CORRELATION_MIN = 0.70    # Border vs content correlation above this = too similar
+# Full-page scans (min dim >= 2000px) are EXPECTED to have scanner borders.
+# Their borders legitimately have noise, dust, compression artifacts, so
+# we use lenient thresholds. Pre-cropped photos (smaller) use strict
+# thresholds because any crop is suspicious.
+# ---------------------------------------------------------------------------
+MIN_SCAN_DIMENSION = 2000           # Same cutoff as _safe_crop in cropper.py
+
+# Edge variance: scanner beds have noise that pushes variance up on large scans
+EDGE_VAR_STRICT = 500               # pre-cropped: low bar to reject
+EDGE_VAR_LOOSE = 3000               # full scans: allow scanner noise/dust
+
+# Histogram correlation: white borders on scans can correlate with bright photos
+HIST_CORR_STRICT = 0.70             # pre-cropped: tight similarity = reject
+HIST_CORR_LOOSE = 0.90              # full scans: only reject near-identical
+
 FACE_MARGIN_PX = 10                 # Extra px around face box for safety
 
 
@@ -70,7 +83,11 @@ def _validate_edge_pixels(original_img, crop_box):
 
     max_variance = max(variances)
 
-    if max_variance > EDGE_VARIANCE_THRESHOLD:
+    # Resolution-aware threshold
+    min_dim = min(orig_h, orig_w)
+    threshold = EDGE_VAR_LOOSE if min_dim >= MIN_SCAN_DIMENSION else EDGE_VAR_STRICT
+
+    if max_variance > threshold:
         return False, "border_has_content"
 
     return True, "border_is_uniform"
@@ -123,7 +140,11 @@ def _validate_histogram(original_img, crop_box):
     # Compare using correlation (1.0 = identical)
     correlation = cv2.compareHist(hist_border, hist_kept, cv2.HISTCMP_CORREL)
 
-    if correlation > HISTOGRAM_CORRELATION_MIN:
+    # Resolution-aware threshold
+    min_dim = min(orig_h, orig_w)
+    threshold = HIST_CORR_LOOSE if min_dim >= MIN_SCAN_DIMENSION else HIST_CORR_STRICT
+
+    if correlation > threshold:
         return False, "border_matches_content"
 
     return True, "border_differs_from_content"
@@ -215,7 +236,15 @@ def _validate_faces(original_img, crop_box):
 # ---------------------------------------------------------------------------
 def validate_crop(original_img, cropped_img, crop_box):
     """
-    Run all validators on a proposed crop.
+    Run validators on a proposed crop.
+
+    For full-page scans (min dim >= 2000px): only face detection runs.
+    Edge/histogram validators are skipped because _safe_crop() already
+    guards area, and scanner borders legitimately have noise that
+    triggers false rejections.
+
+    For pre-cropped/small photos: all three validators run with strict
+    thresholds to catch any destructive crop.
 
     Args:
         original_img: Original BGR image (numpy array)
@@ -224,24 +253,17 @@ def validate_crop(original_img, cropped_img, crop_box):
 
     Returns:
         tuple: (is_safe, reason, details_dict)
-            is_safe: True if all validators pass
-            reason: Human-readable reason for rejection (or "all_clear")
-            details_dict: Per-validator results for logging/display
     """
     if cropped_img is None or crop_box is None:
         return True, "no_crop_proposed", {}
 
+    orig_h, orig_w = original_img.shape[:2]
+    min_dim = min(orig_h, orig_w)
+    is_full_scan = min_dim >= MIN_SCAN_DIMENSION
+
     details = {}
 
-    # 1. Edge pixel analysis
-    edge_safe, edge_reason = _validate_edge_pixels(original_img, crop_box)
-    details["edge_pixels"] = {"passed": edge_safe, "reason": edge_reason}
-
-    # 2. Histogram comparison
-    hist_safe, hist_reason = _validate_histogram(original_img, crop_box)
-    details["histogram"] = {"passed": hist_safe, "reason": hist_reason}
-
-    # 3. Face detection
+    # Face detection runs on ALL images (most critical validator)
     face_safe, face_reason, face_count = _validate_faces(original_img, crop_box)
     details["face_detection"] = {
         "passed": face_safe,
@@ -249,12 +271,23 @@ def validate_crop(original_img, cropped_img, crop_box):
         "faces_found": face_count,
     }
 
-    # Overall verdict: ALL must pass
     if not face_safe:
         return False, face_reason, details
-    if not edge_safe:
-        return False, edge_reason, details
-    if not hist_safe:
-        return False, hist_reason, details
+
+    # Edge and histogram validators: only for pre-cropped/small photos
+    if not is_full_scan:
+        edge_safe, edge_reason = _validate_edge_pixels(original_img, crop_box)
+        details["edge_pixels"] = {"passed": edge_safe, "reason": edge_reason}
+
+        hist_safe, hist_reason = _validate_histogram(original_img, crop_box)
+        details["histogram"] = {"passed": hist_safe, "reason": hist_reason}
+
+        if not edge_safe:
+            return False, edge_reason, details
+        if not hist_safe:
+            return False, hist_reason, details
+    else:
+        details["edge_pixels"] = {"passed": True, "reason": "skipped_full_scan"}
+        details["histogram"] = {"passed": True, "reason": "skipped_full_scan"}
 
     return True, "all_clear", details
