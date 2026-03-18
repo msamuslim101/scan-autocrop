@@ -76,6 +76,22 @@ const STRATEGY_INFO = {
     error_fallback: {
         label: 'Error Fallback',
         desc: 'An unexpected error occurred during processing. The original image was saved as-is to prevent any data loss.'
+    },
+    rejected_face_would_be_cut: {
+        label: 'Rejected (Face Cut)',
+        desc: 'The crop was rejected because it would have partially cut a detected face. The original image was kept to prevent data loss.'
+    },
+    rejected_border_has_content: {
+        label: 'Rejected (Content in Border)',
+        desc: 'The crop was rejected because the border region contains texture that looks like photo content, not scanner background.'
+    },
+    rejected_border_matches_content: {
+        label: 'Rejected (Border = Content)',
+        desc: 'The crop was rejected because the color histogram of the border matches the photo content, suggesting the border is part of the image.'
+    },
+    rejected_overcrop: {
+        label: 'Rejected (Over-Crop)',
+        desc: 'The crop was rejected by the safety guard because it would have removed too much of the image area.'
     }
 };
 
@@ -343,9 +359,16 @@ function createImageCard(result) {
     const card = document.createElement('div');
     card.className = 'image-card';
 
-    const isChanged = result.strategy !== 'original' && result.strategy !== 'no_crop_needed';
+    const isChanged = result.strategy !== 'original' && result.strategy !== 'no_crop_needed'
+        && !result.strategy.startsWith('rejected_');
+    const isRejected = result.strategy.startsWith('rejected_');
     const sizeText = result.cropped_size
         ? `${result.cropped_size[0]}x${result.cropped_size[1]}`
+        : '';
+    const confidence = result.confidence !== undefined ? result.confidence : '-';
+    const confClass = confidence >= 90 ? 'conf-high' : confidence >= 60 ? 'conf-mid' : 'conf-low';
+    const validText = result.validation && !result.validation.passed
+        ? result.validation.reason.replace(/_/g, ' ')
         : '';
 
     card.innerHTML = `
@@ -358,9 +381,11 @@ function createImageCard(result) {
         <div class="image-card-info">
             <div class="image-card-name" title="${result.filename}">${result.filename}</div>
             <div class="image-card-meta">
-                <span class="image-card-strategy ${isChanged ? '' : 'strategy-original'}">${result.strategy}</span>
+                <span class="image-card-strategy ${isChanged ? '' : isRejected ? 'strategy-rejected' : 'strategy-original'}">${result.strategy}</span>
+                <span class="confidence-badge ${confClass}">${confidence}</span>
                 <span class="image-card-size">${sizeText}</span>
             </div>
+            ${validText ? `<div class="validation-reason">${validText}</div>` : ''}
         </div>
         <div class="image-card-actions">
             <a href="${API}/api/download/${currentSessionId}/${result.filename}" 
@@ -378,21 +403,30 @@ function createFolderCard(result) {
     const card = document.createElement('div');
     card.className = 'image-card';
 
-    const isChanged = result.strategy !== 'original' && result.strategy !== 'no_crop_needed';
+    const isChanged = result.strategy !== 'original' && result.strategy !== 'no_crop_needed'
+        && !result.strategy.startsWith('rejected_');
+    const isRejected = result.strategy.startsWith('rejected_');
     const origText = result.original_size
         ? `${result.original_size[0]}x${result.original_size[1]}`
         : '';
     const cropText = result.cropped_size
         ? `${result.cropped_size[0]}x${result.cropped_size[1]}`
         : '';
+    const confidence = result.confidence !== undefined ? result.confidence : '-';
+    const confClass = confidence >= 90 ? 'conf-high' : confidence >= 60 ? 'conf-mid' : 'conf-low';
+    const validText = result.validation && !result.validation.passed
+        ? result.validation.reason.replace(/_/g, ' ')
+        : '';
 
     card.innerHTML = `
         <div class="image-card-info" style="padding-top: 20px;">
             <div class="image-card-name" title="${result.filename}">${result.filename}</div>
             <div class="image-card-meta">
-                <span class="image-card-strategy ${isChanged ? '' : 'strategy-original'}">${result.strategy}</span>
-                <span class="image-card-size">${origText} → ${cropText}</span>
+                <span class="image-card-strategy ${isChanged ? '' : isRejected ? 'strategy-rejected' : 'strategy-original'}">${result.strategy}</span>
+                <span class="confidence-badge ${confClass}">${confidence}</span>
+                <span class="image-card-size">${origText} -> ${cropText}</span>
             </div>
+            ${validText ? `<div class="validation-reason">${validText}</div>` : ''}
         </div>
     `;
 
@@ -469,13 +503,15 @@ function exportReport() {
 
     lines.push('PER-IMAGE RESULTS');
     lines.push('-'.repeat(40));
-    lines.push(`${'Filename'.padEnd(28)} ${'Strategy'.padEnd(16)} ${'Original'.padEnd(12)} ${'Cropped'.padEnd(12)}`);
-    lines.push('-'.repeat(70));
+    lines.push(`${'Filename'.padEnd(28)} ${'Strategy'.padEnd(16)} ${'Conf'.padStart(5)} ${'Valid'.padEnd(8)} ${'Original'.padEnd(12)} ${'Cropped'.padEnd(12)}`);
+    lines.push('-'.repeat(85));
 
     for (const r of d.results) {
         const orig = r.original_size ? `${r.original_size[0]}x${r.original_size[1]}` : 'N/A';
         const crop = r.cropped_size ? `${r.cropped_size[0]}x${r.cropped_size[1]}` : 'N/A';
-        lines.push(`${r.filename.padEnd(28)} ${r.strategy.padEnd(16)} ${orig.padEnd(12)} ${crop.padEnd(12)}`);
+        const conf = r.confidence !== undefined ? String(r.confidence) : '-';
+        const valid = r.validation && !r.validation.passed ? 'FAIL' : 'pass';
+        lines.push(`${r.filename.padEnd(28)} ${r.strategy.padEnd(16)} ${conf.padStart(5)} ${valid.padEnd(8)} ${orig.padEnd(12)} ${crop.padEnd(12)}`);
     }
 
     lines.push('');

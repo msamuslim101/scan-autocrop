@@ -240,12 +240,14 @@ def _save_report(output_folder, total, cropped, rate, stats, results):
 
     lines.append("PER-IMAGE RESULTS")
     lines.append("-" * 40)
-    lines.append(f"{'Filename':28s} {'Strategy':16s} {'Original':12s} {'Cropped':12s}")
-    lines.append("-" * 70)
+    lines.append(f"{'Filename':28s} {'Strategy':16s} {'Conf':5s} {'Valid':8s} {'Original':12s} {'Cropped':12s}")
+    lines.append("-" * 85)
     for r in results:
         orig = f"{r['original_size'][0]}x{r['original_size'][1]}" if r.get("original_size") else "N/A"
         crop = f"{r['cropped_size'][0]}x{r['cropped_size'][1]}" if r.get("cropped_size") else "N/A"
-        lines.append(f"{r['filename']:28s} {r['strategy']:16s} {orig:12s} {crop:12s}")
+        conf = str(r.get("confidence", "-"))
+        valid = "pass" if r.get("validation", {}).get("passed", True) else "FAIL"
+        lines.append(f"{r['filename']:28s} {r['strategy']:16s} {conf:>5s} {valid:8s} {orig:12s} {crop:12s}")
 
     lines.append("")
     lines.append("=" * 60)

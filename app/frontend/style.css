@@ -581,6 +581,46 @@ body {
     color: var(--text-muted);
 }
 
+.image-card-strategy.strategy-rejected {
+    background: oklch(30% 0.08 25);
+    color: oklch(70% 0.15 25);
+}
+
+/* Confidence Badge */
+.confidence-badge {
+    font-size: 0.65rem;
+    font-family: var(--font-mono);
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 999px;
+    min-width: 28px;
+    text-align: center;
+}
+
+.confidence-badge.conf-high {
+    background: oklch(30% 0.06 150);
+    color: oklch(75% 0.18 150);
+}
+
+.confidence-badge.conf-mid {
+    background: oklch(30% 0.06 85);
+    color: oklch(75% 0.15 85);
+}
+
+.confidence-badge.conf-low {
+    background: oklch(30% 0.06 25);
+    color: oklch(70% 0.15 25);
+}
+
+/* Validation Reason */
+.validation-reason {
+    font-size: 0.68rem;
+    color: oklch(65% 0.12 25);
+    font-family: var(--font-mono);
+    padding: 3px 0;
+    opacity: 0.85;
+}
+
 .image-card-size {
     font-size: 0.72rem;
     color: var(--text-muted);

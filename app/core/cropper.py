@@ -17,6 +17,9 @@ import cv2
 import numpy as np
 from PIL import Image
 
+from core.confidence import compute_confidence
+from core.validators import validate_crop
+
 
 # ---------------------------------------------------------------------------
 # Strategy 1: Canny Edge Detection (Fallback for snow/white photos)
@@ -42,20 +45,20 @@ def _canny_edge_crop(img):
     contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
     if not contours:
-        return None, "no_edges"
+        return None, "no_edges", None
 
     largest = max(contours, key=cv2.contourArea)
     area = cv2.contourArea(largest)
 
     if area < 0.1 * image_area:
-        return None, "edge_too_small"
+        return None, "edge_too_small", None
 
     x, y, cw, ch = cv2.boundingRect(largest)
 
     if (cw * ch) / image_area > 0.95:
-        return None, "no_border"
+        return None, "no_border", None
 
-    return img[y:y+ch, x:x+cw], "canny_edge"
+    return img[y:y+ch, x:x+cw], "canny_edge", (x, y, cw, ch)
 
 
 # ---------------------------------------------------------------------------
@@ -84,15 +87,15 @@ def _variance_based_crop(img):
 
     coords = cv2.findNonZero(var_mask)
     if coords is None:
-        return None, "no_variance"
+        return None, "no_variance", None
 
     x, y, cw, ch = cv2.boundingRect(coords)
 
     area_ratio = (cw * ch) / (h * w)
     if area_ratio < 0.1 or area_ratio > 0.95:
-        return None, "var_invalid"
+        return None, "var_invalid", None
 
-    return img[y:y+ch, x:x+cw], "variance"
+    return img[y:y+ch, x:x+cw], "variance", (x, y, cw, ch)
 
 
 # ---------------------------------------------------------------------------
@@ -118,15 +121,15 @@ def _saturation_based_crop(img):
 
     coords = cv2.findNonZero(sat_mask)
     if coords is None:
-        return None, "no_saturation"
+        return None, "no_saturation", None
 
     x, y, cw, ch = cv2.boundingRect(coords)
 
     area_ratio = (cw * ch) / (h * w)
     if area_ratio < 0.1 or area_ratio > 0.95:
-        return None, "sat_invalid"
+        return None, "sat_invalid", None
 
-    return img[y:y+ch, x:x+cw], "saturation"
+    return img[y:y+ch, x:x+cw], "saturation", (x, y, cw, ch)
 
 
 # ---------------------------------------------------------------------------
@@ -177,9 +180,10 @@ def _gradient_line_scan(img):
 
     ratio = crop_area / original_area
     if ratio < 0.1 or ratio > 0.95:
-        return None, "grad_invalid"
+        return None, "grad_invalid", None
 
-    return img[top:bottom+1, left:right+1], "gradient"
+    box = (left, top, right - left + 1, bottom - top + 1)
+    return img[top:bottom+1, left:right+1], "gradient", box
 
 
 # ---------------------------------------------------------------------------
@@ -199,14 +203,14 @@ SAFETY_LOOSE = 0.05         # full scans: keep at least 5% (photos can be small 
 SAFETY_STRICT = 0.90        # pre-cropped: keep at least 90% of area
 
 
-def _safe_crop(img, cropped, strategy):
+def _safe_crop(img, cropped, strategy, crop_box):
     """
     Validate that the crop did not remove too much content.
     Uses a stricter threshold for images that appear to be already cropped.
-    Returns (cropped, strategy) if safe, or (None, reason) if unsafe.
+    Returns (cropped, strategy, crop_box) if safe, or (None, reason, None) if unsafe.
     """
     if cropped is None:
-        return None, strategy
+        return None, strategy, None
 
     h, w = img.shape[:2]
     ch, cw = cropped.shape[:2]
@@ -218,9 +222,9 @@ def _safe_crop(img, cropped, strategy):
     threshold = SAFETY_LOOSE if min_dim >= MIN_SCAN_DIMENSION else SAFETY_STRICT
 
     if crop_area_ratio < threshold:
-        return None, "rejected_overcrop"
+        return None, "rejected_overcrop", None
 
-    return cropped, strategy
+    return cropped, strategy, crop_box
 
 
 # ---------------------------------------------------------------------------
@@ -228,15 +232,17 @@ def _safe_crop(img, cropped, strategy):
 # ---------------------------------------------------------------------------
 def crop_image(img):
     """
-    Production-grade cropping with 5-tier fallback and safety guard.
-    
-    Any crop that removes more than 20% of image area is rejected.
-    
+    Production-grade cropping with 5-tier fallback, safety guard,
+    confidence scoring, and pre-commit validation.
+
     Returns:
-        tuple: (cropped_image_or_None, strategy_name)
+        tuple: (cropped_image_or_None, strategy_name, confidence, validation)
+            confidence: int 0-100
+            validation: dict with {passed, reason, details}
     """
     h, w = img.shape[:2]
     image_area = h * w
+    contour_count = 0
 
     # --- TIER 1: Otsu + MorphClose + RETR_EXTERNAL ---
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
@@ -247,7 +253,7 @@ def crop_image(img):
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
     closed = cv2.morphologyEx(thresh, cv2.MORPH_CLOSE, kernel)
 
-    # Edge clearing — break scanner noise tethering
+    # Edge clearing -- break scanner noise tethering
     margin = 10
     closed[0:margin, :] = 0
     closed[-margin:, :] = 0
@@ -255,6 +261,7 @@ def crop_image(img):
     closed[:, -margin:] = 0
 
     contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    contour_count = len(contours)
 
     if contours:
         largest = max(contours, key=cv2.contourArea)
@@ -271,44 +278,65 @@ def crop_image(img):
                 x, y, cw, ch = cv2.boundingRect(largest)
                 strategy = "pro_contour"
 
+            crop_box = (x, y, cw, ch)
             if (cw * ch) / image_area < 0.95:
-                result, strategy = _safe_crop(img, img[y:y+ch, x:x+cw], strategy)
+                result, strategy, crop_box = _safe_crop(
+                    img, img[y:y+ch, x:x+cw], strategy, crop_box
+                )
                 if result is not None:
-                    return result, strategy
+                    return _finalize(img, result, strategy, crop_box, contour_count)
 
     # --- TIER 2: Canny Edge ---
-    result, strategy = _canny_edge_crop(img)
-    result, strategy = _safe_crop(img, result, strategy)
+    result, strategy, crop_box = _canny_edge_crop(img)
+    result, strategy, crop_box = _safe_crop(img, result, strategy, crop_box)
     if result is not None:
-        return result, strategy
+        return _finalize(img, result, strategy, crop_box, contour_count)
 
     # --- TIER 3: Variance ---
-    result, strategy = _variance_based_crop(img)
-    result, strategy = _safe_crop(img, result, strategy)
+    result, strategy, crop_box = _variance_based_crop(img)
+    result, strategy, crop_box = _safe_crop(img, result, strategy, crop_box)
     if result is not None:
-        return result, strategy
+        return _finalize(img, result, strategy, crop_box, contour_count)
 
     # --- TIER 4: Saturation ---
-    result, strategy = _saturation_based_crop(img)
-    result, strategy = _safe_crop(img, result, strategy)
+    result, strategy, crop_box = _saturation_based_crop(img)
+    result, strategy, crop_box = _safe_crop(img, result, strategy, crop_box)
     if result is not None:
-        return result, strategy
+        return _finalize(img, result, strategy, crop_box, contour_count)
 
     # --- TIER 5: Gradient ---
-    result, strategy = _gradient_line_scan(img)
-    result, strategy = _safe_crop(img, result, strategy)
+    result, strategy, crop_box = _gradient_line_scan(img)
+    result, strategy, crop_box = _safe_crop(img, result, strategy, crop_box)
     if result is not None:
-        return result, strategy
+        return _finalize(img, result, strategy, crop_box, contour_count)
 
-    return None, "no_crop_needed"
+    no_validation = {"passed": True, "reason": "no_crop_proposed", "details": {}}
+    return None, "no_crop_needed", 100, no_validation
+
+
+def _finalize(img, cropped, strategy, crop_box, contour_count):
+    """
+    Run confidence scoring and validators on a crop that passed _safe_crop.
+    Returns the final 4-tuple or rejects back to original.
+    """
+    confidence = compute_confidence(img, cropped, crop_box, contour_count)
+    is_safe, reason, details = validate_crop(img, cropped, crop_box)
+    validation = {"passed": is_safe, "reason": reason, "details": details}
+
+    if not is_safe:
+        # Validators rejected this crop -- keep original
+        return None, f"rejected_{reason}", confidence, validation
+
+    return cropped, strategy, confidence, validation
 
 
 def process_single_image(input_path, output_path):
     """
     Process one image: crop and save at 100% JPEG quality.
-    
+
     Returns:
-        dict with keys: success, strategy, original_size, cropped_size, filename
+        dict with keys: success, strategy, confidence, validation,
+                        original_size, cropped_size, filename
     """
     filename = os.path.basename(input_path)
     img = cv2.imread(input_path)
@@ -317,6 +345,8 @@ def process_single_image(input_path, output_path):
         return {
             "success": False,
             "strategy": "read_error",
+            "confidence": 0,
+            "validation": {"passed": False, "reason": "read_error", "details": {}},
             "filename": filename,
             "original_size": None,
             "cropped_size": None,
@@ -326,7 +356,7 @@ def process_single_image(input_path, output_path):
     original_size = (w, h)
 
     try:
-        cropped, strategy = crop_image(img)
+        cropped, strategy, confidence, validation = crop_image(img)
 
         if cropped is not None:
             ch, cw = cropped.shape[:2]
@@ -334,25 +364,30 @@ def process_single_image(input_path, output_path):
             Image.fromarray(cropped_rgb).save(output_path, quality=100, subsampling=0)
             cropped_size = (cw, ch)
         else:
-            # No crop needed — save original
+            # No crop needed or validators rejected -- save original
             cv2.imwrite(output_path, img, [cv2.IMWRITE_JPEG_QUALITY, 100])
             cropped_size = original_size
-            strategy = "original"
+            if not strategy.startswith("rejected_"):
+                strategy = "original"
 
         return {
             "success": True,
             "strategy": strategy,
+            "confidence": confidence,
+            "validation": validation,
             "filename": filename,
             "original_size": original_size,
             "cropped_size": cropped_size,
         }
 
     except Exception:
-        # Emergency fallback — save original
+        # Emergency fallback -- save original
         cv2.imwrite(output_path, img, [cv2.IMWRITE_JPEG_QUALITY, 100])
         return {
             "success": True,
             "strategy": "error_fallback",
+            "confidence": 0,
+            "validation": {"passed": False, "reason": "exception", "details": {}},
             "filename": filename,
             "original_size": original_size,
             "cropped_size": original_size,
