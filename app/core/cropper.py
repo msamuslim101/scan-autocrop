@@ -422,7 +422,15 @@ def process_single_image(input_path, output_path, progress_callback=None):
         if pre_cv_result and routed["llm_result"] is None:
             routed["llm_result"] = pre_cv_result["llm_result"]
             if pre_cv_result["tier_label"] == "llm_prescreened":
-                routed["tier_label"] = "llm_prescreened"
+                if routed["cropped_img"] is None:
+                    # LLM said there's a border, but CV completely failed to find one that
+                    # passed the safety guards. Change the outcome to reflect this contradiction
+                    # so the user knows they need to crop it manually.
+                    routed["strategy"] = "llm_border_detected"
+                    routed["tier_label"] = "llm_border_detected"
+                    routed["tier"] = 2
+                else:
+                    routed["tier_label"] = "llm_prescreened"
 
         final_img = routed["cropped_img"]
         strategy = routed["strategy"]

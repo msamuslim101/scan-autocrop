@@ -194,6 +194,7 @@ async def crop_files(session_id: str = Form(...), progress_id: Optional[str] = F
     SKIP_STRATEGIES = {
         "original", "no_crop_needed", "error_fallback",
         "llm_rejected", "llm_skip", "llm_unavailable", "flagged_review",
+        "llm_border_detected", "llm_no_crop"
     }
     total = len(results)
     cropped_count = sum(1 for r in results
@@ -265,6 +266,7 @@ async def crop_folder(folder_path: str = Form(...), progress_id: Optional[str] =
     SKIP_STRATEGIES = {
         "original", "no_crop_needed", "error_fallback",
         "llm_rejected", "llm_skip", "llm_unavailable", "flagged_review",
+        "llm_border_detected", "llm_no_crop"
     }
     total = len(results)
     cropped_count = sum(1 for r in results
@@ -316,15 +318,19 @@ def _save_report(output_folder, total, cropped, rate, stats, results):
 
     lines.append("PER-IMAGE RESULTS")
     lines.append("-" * 40)
-    lines.append(f"{'Filename':28s} {'Strategy':16s} {'Conf':5s} {'Valid':8s} {'Tier':10s} {'Original':12s} {'Cropped':12s}")
-    lines.append("-" * 95)
+    lines.append(f"{'Filename':28s} {'Strategy':20s} {'Tier':16s} {'Conf':4s} {'Original':12s} {'Cropped':12s} {'LLM Verdict':11s} {'Reason'}")
+    lines.append("-" * 140)
     for r in results:
         orig = f"{r['original_size'][0]}x{r['original_size'][1]}" if r.get("original_size") else "N/A"
         crop = f"{r['cropped_size'][0]}x{r['cropped_size'][1]}" if r.get("cropped_size") else "N/A"
         conf = str(r.get("confidence", "-"))
-        valid = "pass" if r.get("validation", {}).get("passed", True) else "FAIL"
         tier = r.get("tier_label", "-")
-        lines.append(f"{r['filename']:28s} {r['strategy']:16s} {conf:>5s} {valid:8s} {tier:10s} {orig:12s} {crop:12s}")
+        llm_v = ""
+        llm_r = ""
+        if r.get("llm_result"):
+            llm_v = r["llm_result"].get("verdict", "")
+            llm_r = r["llm_result"].get("reason", "").replace("\n", " ").strip()
+        lines.append(f"{r['filename']:28s} {r['strategy']:20s} {tier:16s} {conf:>4s} {orig:12s} {crop:12s} {llm_v:11s} {llm_r}")
 
     lines.append("")
     lines.append("=" * 60)

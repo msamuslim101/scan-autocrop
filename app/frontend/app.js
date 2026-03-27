@@ -686,15 +686,18 @@ function exportReport() {
 
     lines.push('PER-IMAGE RESULTS');
     lines.push('-'.repeat(40));
-    lines.push(`${'Filename'.padEnd(28)} ${'Strategy'.padEnd(16)} ${'Conf'.padStart(5)} ${'Valid'.padEnd(8)} ${'Original'.padEnd(12)} ${'Cropped'.padEnd(12)}`);
-    lines.push('-'.repeat(85));
+    lines.push(`${'Filename'.padEnd(28)} ${'Strategy'.padEnd(20)} ${'Tier'.padEnd(16)} ${'Conf'.padStart(4)} ${'Original'.padEnd(12)} ${'Cropped'.padEnd(12)} ${'LLM Verdict'.padEnd(11)} ${'Reason'}`);
+    lines.push('-'.repeat(140));
 
     for (const r of d.results) {
         const orig = r.original_size ? `${r.original_size[0]}x${r.original_size[1]}` : 'N/A';
         const crop = r.cropped_size ? `${r.cropped_size[0]}x${r.cropped_size[1]}` : 'N/A';
         const conf = r.confidence !== undefined ? String(r.confidence) : '-';
-        const valid = r.validation && !r.validation.passed ? 'FAIL' : 'pass';
-        lines.push(`${r.filename.padEnd(28)} ${r.strategy.padEnd(16)} ${conf.padStart(5)} ${valid.padEnd(8)} ${orig.padEnd(12)} ${crop.padEnd(12)}`);
+        const tier = r.tier_label || '-';
+        const llmV = (r.llm_result && r.llm_result.verdict) ? r.llm_result.verdict : '';
+        const llmR = (r.llm_result && r.llm_result.reason) ? r.llm_result.reason.replace(/\n/g, ' ').trim() : '';
+
+        lines.push(`${r.filename.padEnd(28)} ${r.strategy.padEnd(20)} ${tier.padEnd(16)} ${conf.padStart(4)} ${orig.padEnd(12)} ${crop.padEnd(12)} ${llmV.padEnd(11)} ${llmR}`);
     }
 
     lines.push('');
