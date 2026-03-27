@@ -370,19 +370,59 @@ def process_single_image(input_path, output_path, progress_callback=None):
     original_size = (w, h)
 
     try:
+        from core.router import route_crop, route_pre_cv, _get_llm_mode
+
+        llm_mode = _get_llm_mode()
+        pre_cv_result = None
+
+        # ----- PRE_CV MODE: Ask LLM first -----
+        if llm_mode == "pre_cv":
+            if progress_callback:
+                progress_callback("llm", f"LLM pre-screening {filename}...")
+
+            pre_cv_result = route_pre_cv(img, progress_callback=progress_callback)
+
+            if not pre_cv_result["should_crop"]:
+                # LLM says no border -- skip CV entirely, keep original
+                cv2.imwrite(output_path, img, [cv2.IMWRITE_JPEG_QUALITY, 100])
+
+                if progress_callback:
+                    progress_callback("done", f"Finished {filename}")
+
+                return {
+                    "success": True,
+                    "strategy": "llm_no_crop",
+                    "confidence": 100,
+                    "validation": {"passed": True, "reason": "llm_pre_screened",
+                                   "details": {}},
+                    "tier": 0,
+                    "tier_label": pre_cv_result["tier_label"],
+                    "llm_result": pre_cv_result["llm_result"],
+                    "filename": filename,
+                    "original_size": original_size,
+                    "cropped_size": original_size,
+                }
+
+        # ----- CV ENGINE (runs in all modes, or after LLM says SAFE) -----
+        if progress_callback:
+            progress_callback("cv", f"CV processing {filename}...")
+
         cropped, strategy, confidence, validation = crop_image(img)
 
-        if progress_callback:
-            from core.router import classify_tier
-            tier, _ = classify_tier(confidence)
-            if tier == 2:
-                progress_callback("llm", f"LLM validating {filename}")
-          # Fallback to keep original if everything failed
-        if cropped is None:
+        # Fallback label only for truly unexpected failures
+        KNOWN_SKIP = {"no_crop_needed", "original"}
+        if cropped is None and not strategy.startswith("rejected_") and strategy not in KNOWN_SKIP:
             strategy = "error_fallback"
 
-        # Route through three-tier system (includes LLM for Tier 2)
-        routed = route_crop(img, cropped, strategy, confidence, validation, progress_callback=progress_callback)
+        # Route through three-tier system (post_cv LLM validation)
+        routed = route_crop(img, cropped, strategy, confidence, validation,
+                            progress_callback=progress_callback)
+
+        # Attach pre_cv LLM result if it exists and post_cv didn't call LLM
+        if pre_cv_result and routed["llm_result"] is None:
+            routed["llm_result"] = pre_cv_result["llm_result"]
+            if pre_cv_result["tier_label"] == "llm_prescreened":
+                routed["tier_label"] = "llm_prescreened"
 
         final_img = routed["cropped_img"]
         strategy = routed["strategy"]
@@ -397,7 +437,8 @@ def process_single_image(input_path, output_path, progress_callback=None):
             cv2.imwrite(output_path, img, [cv2.IMWRITE_JPEG_QUALITY, 100])
             cropped_size = original_size
             if not strategy.startswith("rejected_") and strategy not in (
-                "llm_rejected", "llm_skip", "llm_unavailable", "flagged_review"
+                "llm_rejected", "llm_skip", "llm_unavailable", "flagged_review",
+                "llm_border_detected", "no_crop_needed",
             ):
                 strategy = "original"
 

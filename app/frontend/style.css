@@ -685,12 +685,26 @@ body {
     background: oklch(25% 0.06 250);
     color: oklch(70% 0.15 250);
     border: 1px solid oklch(35% 0.08 250);
+    transition: all 0.2s ease;
+}
+
+.llm-indicator.llm-connected:hover {
+    background: oklch(30% 0.08 250);
+    color: oklch(80% 0.18 250);
+    border-color: oklch(45% 0.10 250);
 }
 
 .llm-indicator.llm-disconnected {
     background: oklch(20% 0.02 0);
     color: oklch(50% 0.05 0);
     border: 1px solid oklch(30% 0.03 0);
+    transition: all 0.2s ease;
+}
+
+.llm-indicator.llm-disconnected:hover {
+    background: oklch(25% 0.04 0);
+    color: oklch(60% 0.08 0);
+    border-color: oklch(40% 0.05 0);
 }
 
 .image-card-size {

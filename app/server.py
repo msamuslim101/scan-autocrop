@@ -78,13 +78,34 @@ def llm_status():
         cfg = get_config()
         llm_cfg = cfg.get("llm", {})
         available = is_available()
+        mode = llm_cfg.get("mode", "post_cv")
         return {
             "available": available,
-            "enabled": llm_cfg.get("enabled", True),
+            "enabled": llm_cfg.get("enabled", True) and mode != "off",
+            "mode": mode,
             "model": llm_cfg.get("model", "qwen3.5:2b"),
         }
     except Exception:
-        return {"available": False, "enabled": False, "model": "unknown"}
+        return {"available": False, "enabled": False, "mode": "off", "model": "unknown"}
+
+
+@app.post("/api/llm-toggle")
+async def llm_toggle(mode: str = Form(...)):
+    """
+    Switch LLM mode at runtime without restarting.
+    Modes: 'off', 'post_cv', 'pre_cv'
+    """
+    valid_modes = {"off", "post_cv", "pre_cv"}
+    if mode not in valid_modes:
+        raise HTTPException(status_code=400, detail=f"Invalid mode. Use: {valid_modes}")
+
+    from core.router import get_config, reload_config
+    cfg = get_config()
+    cfg.setdefault("llm", {})["mode"] = mode
+    cfg["llm"]["enabled"] = mode != "off"
+    reload_config(cfg)
+
+    return {"mode": mode, "enabled": mode != "off"}
 
 
 @app.post("/api/upload")

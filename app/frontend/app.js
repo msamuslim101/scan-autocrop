@@ -37,23 +37,64 @@ const resultsCount = document.getElementById('resultsCount');
 let currentSessionId = null;
 let lastCropData = null;
 let llmAvailable = false;
+let llmMode = 'off';
+
+const MODE_LABELS = {
+    off: 'LLM: OFF',
+    post_cv: 'LLM: Post-CV',
+    pre_cv: 'LLM: Pre-CV',
+};
+const MODE_CYCLE = ['off', 'post_cv', 'pre_cv'];
 
 // Check LLM status on load
 async function checkLlmStatus() {
     try {
         const res = await fetch(`${API}/api/llm-status`);
         const data = await res.json();
-        llmAvailable = data.available && data.enabled;
-        const indicator = document.getElementById('llmIndicator');
-        if (indicator) {
-            indicator.className = llmAvailable ? 'llm-indicator llm-connected' : 'llm-indicator llm-disconnected';
-            indicator.title = llmAvailable ? `LLM: ${data.model} (connected)` : 'LLM: disconnected';
-            indicator.textContent = llmAvailable ? `LLM: ${data.model}` : 'LLM: offline';
-        }
+        llmAvailable = data.available;
+        llmMode = data.mode || 'off';
+        _renderLlmIndicator();
     } catch (e) {
         llmAvailable = false;
+        llmMode = 'off';
     }
 }
+
+function _renderLlmIndicator() {
+    const indicator = document.getElementById('llmIndicator');
+    if (!indicator) return;
+
+    const isActive = llmMode !== 'off' && llmAvailable;
+    indicator.className = isActive ? 'llm-indicator llm-connected' : 'llm-indicator llm-disconnected';
+    indicator.textContent = llmAvailable ? MODE_LABELS[llmMode] : 'LLM: offline';
+    indicator.title = `Click to change mode. Current: ${llmMode}${llmAvailable ? '' : ' (Ollama not running)'}`;
+    indicator.style.cursor = 'pointer';
+}
+
+async function toggleLlmMode() {
+    if (!llmAvailable) {
+        alert('Ollama is not running. Start it first with: ollama serve');
+        return;
+    }
+    const idx = MODE_CYCLE.indexOf(llmMode);
+    const nextMode = MODE_CYCLE[(idx + 1) % MODE_CYCLE.length];
+
+    try {
+        const form = new FormData();
+        form.append('mode', nextMode);
+        const res = await fetch(`${API}/api/llm-toggle`, { method: 'POST', body: form });
+        if (res.ok) {
+            const data = await res.json();
+            llmMode = data.mode;
+            _renderLlmIndicator();
+        }
+    } catch (e) {
+        console.error('Failed to toggle LLM mode:', e);
+    }
+}
+
+// Attach click handler after DOM is ready
+document.getElementById('llmIndicator')?.addEventListener('click', toggleLlmMode);
 checkLlmStatus();  // Store for export
 
 // ---------------------------------------------------------------------------
@@ -135,6 +176,14 @@ const STRATEGY_INFO = {
     llm_border_detected: {
         label: 'LLM: Border Detected',
         desc: 'The CV engine could not detect a border, but the LLM vision model confirmed one exists. The original was kept -- manual crop may be needed.'
+    },
+    llm_no_crop: {
+        label: 'LLM: No Crop (Pre-CV)',
+        desc: 'In pre-CV mode, the LLM screened this image first and decided it has no scanner border. CV was skipped entirely. Original kept.'
+    },
+    llm_prescreened: {
+        label: 'LLM: Pre-Screened',
+        desc: 'In pre-CV mode, the LLM confirmed a border exists. The CV engine then ran and cropped the image.'
     }
 };
 
@@ -451,9 +500,9 @@ function createImageCard(result) {
 
     const isChanged = result.strategy !== 'original' && result.strategy !== 'no_crop_needed'
         && !result.strategy.startsWith('rejected_')
-        && !['llm_rejected', 'llm_skip', 'llm_unavailable', 'flagged_review'].includes(result.strategy);
+        && !['llm_rejected', 'llm_skip', 'llm_unavailable', 'flagged_review', 'llm_no_crop', 'llm_border_detected'].includes(result.strategy);
     const isRejected = result.strategy.startsWith('rejected_')
-        || ['llm_rejected', 'llm_skip', 'llm_unavailable', 'flagged_review'].includes(result.strategy);
+        || ['llm_rejected', 'llm_skip', 'llm_unavailable', 'flagged_review', 'llm_no_crop', 'llm_border_detected'].includes(result.strategy);
     const sizeText = result.cropped_size
         ? `${result.cropped_size[0]}x${result.cropped_size[1]}`
         : '';
@@ -513,6 +562,8 @@ function _tierBadgeHTML(tierLabel) {
         llm_disabled: ['T1', 'tier-1'],
         llm_border_detected: ['LLM!', 'tier-2-pass'],
         llm_confirmed_no_crop: ['--', 'tier-none'],
+        llm_prescreened: ['PRE', 'tier-2-pass'],
+        llm_no_border: ['PRE', 'tier-none'],
         flagged_review: ['REV', 'tier-3'],
         no_crop: ['--', 'tier-none'],
     };

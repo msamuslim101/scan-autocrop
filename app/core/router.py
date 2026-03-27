@@ -1,6 +1,11 @@
 """
 Crop Router — Three-tier routing for crop decisions.
 
+Supports two modes (configurable in config.yaml):
+  post_cv: CV crops first, LLM validates ambiguous crops (default)
+  pre_cv:  LLM screens image first, CV only runs if LLM says border exists
+  off:     No LLM, pure CV
+
 Tier 1 (High confidence, >threshold): Auto-crop, skip LLM
 Tier 2 (Medium confidence): Validate with LLM
 Tier 3 (Low confidence, <threshold): Flag for review, keep original
@@ -45,6 +50,28 @@ def get_config():
     return _load_config()
 
 
+def reload_config(new_cfg=None):
+    """
+    Hot-reload config at runtime (used by /api/llm-toggle).
+    If new_cfg is provided, use it directly. Otherwise re-read from disk.
+    """
+    global _config
+    if new_cfg is not None:
+        _config = new_cfg
+    else:
+        _config = None  # Force re-read from disk
+        _load_config()
+
+
+def _get_llm_mode():
+    """Get the current LLM mode: 'off', 'post_cv', 'pre_cv'."""
+    cfg = _load_config()
+    llm_cfg = cfg.get("llm", {})
+    if not llm_cfg.get("enabled", True):
+        return "off"
+    return llm_cfg.get("mode", "post_cv")
+
+
 # ---------------------------------------------------------------------------
 # Tier Classification
 # ---------------------------------------------------------------------------
@@ -69,11 +96,90 @@ def classify_tier(confidence):
 
 
 # ---------------------------------------------------------------------------
-# Route + Validate
+# LLM Helper (shared by both modes)
 # ---------------------------------------------------------------------------
-def route_crop(original_img, cropped_img, strategy, confidence, validation, progress_callback=None):
+def _call_llm(original_img, progress_callback=None, purpose="Analyzing"):
     """
-    Route a crop result through the three-tier system.
+    Call the LLM. Returns (llm_result_dict, available: bool).
+    Returns (None, False) if LLM is off/unavailable.
+    """
+    cfg = _load_config()
+    llm_cfg = cfg.get("llm", {})
+
+    from core.llm_validator import validate_with_llm, is_available
+
+    if not is_available():
+        return None, False
+
+    model = llm_cfg.get("model", "qwen3.5:2b")
+    timeout = llm_cfg.get("timeout_seconds", 60)
+
+    if progress_callback:
+        progress_callback("llm", f"{purpose} with LLM ({model})...")
+    logger.info(f"Calling LLM ({purpose}, model={model})")
+
+    llm_result = validate_with_llm(original_img, model=model, timeout=timeout)
+    return llm_result, True
+
+
+# ---------------------------------------------------------------------------
+# MODE: pre_cv — LLM screens first, then CV crops
+# ---------------------------------------------------------------------------
+def route_pre_cv(original_img, progress_callback=None):
+    """
+    LLM-first mode. Ask LLM: 'does this image have a scanner border?'
+    If YES (SAFE) -> tell CV to crop it.
+    If NO (RISKY) -> skip CV entirely, keep original.
+
+    Returns:
+        dict with keys: should_crop (bool), llm_result, tier_label
+    """
+    llm_result, available = _call_llm(
+        original_img, progress_callback, purpose="Pre-screening"
+    )
+
+    if not available or llm_result is None:
+        # LLM unavailable -- fall through to CV as normal
+        return {
+            "should_crop": True,   # Let CV try anyway
+            "llm_result": {"verdict": "SKIP", "confidence": "LOW",
+                           "reason": "Ollama not available", "time_ms": 0},
+            "tier_label": "llm_unavailable",
+        }
+
+    if llm_result["verdict"] == "SAFE":
+        # LLM says border exists -> let CV crop
+        logger.info(f"Pre-CV: LLM says border exists, proceeding to CV")
+        return {
+            "should_crop": True,
+            "llm_result": llm_result,
+            "tier_label": "llm_prescreened",
+        }
+    elif llm_result["verdict"] == "RISKY":
+        # LLM says no border -> skip CV entirely
+        logger.info(f"Pre-CV: LLM says no border, skipping CV")
+        return {
+            "should_crop": False,
+            "llm_result": llm_result,
+            "tier_label": "llm_no_border",
+        }
+    else:
+        # SKIP/unparseable -> let CV try
+        logger.info(f"Pre-CV: LLM unclear, letting CV decide")
+        return {
+            "should_crop": True,
+            "llm_result": llm_result,
+            "tier_label": "llm_skip",
+        }
+
+
+# ---------------------------------------------------------------------------
+# MODE: post_cv — Current behavior (CV first, LLM validates)
+# ---------------------------------------------------------------------------
+def route_crop(original_img, cropped_img, strategy, confidence, validation,
+               progress_callback=None):
+    """
+    Route a crop result through the three-tier system (post_cv mode).
 
     Args:
         original_img: Original BGR image
@@ -88,9 +194,10 @@ def route_crop(original_img, cropped_img, strategy, confidence, validation, prog
             cropped_img, strategy, confidence, validation,
             tier, tier_label, llm_result (if applicable)
     """
+    mode = _get_llm_mode()
+
     if cropped_img is None:
-        # No crop proposed by CV. But the image might still have a border
-        # that the CV engine couldn't detect. Ask the LLM if enabled.
+        # No crop proposed by CV. Ask LLM if border exists (post_cv only).
         no_crop_result = {
             "cropped_img": None,
             "strategy": strategy,
@@ -101,40 +208,25 @@ def route_crop(original_img, cropped_img, strategy, confidence, validation, prog
             "llm_result": None,
         }
 
-        # Only ask LLM if CV explicitly said "no crop needed" (not a rejection)
-        if strategy in ("no_crop_needed", "original"):
-            cfg = _load_config()
-            llm_cfg = cfg.get("llm", {})
-
-            if llm_cfg.get("enabled", True):
-                from core.llm_validator import validate_with_llm, is_available
-
-                if is_available():
-                    model = llm_cfg.get("model", "qwen3.5:2b")
-                    timeout = llm_cfg.get("timeout_seconds", 15)
-
-                    if progress_callback:
-                        progress_callback("llm", f"Analyzing with LLM ({model}, takes ~30s)...")
-                    logger.info(f"No-crop check: asking LLM if border exists")
-                    llm_result = validate_with_llm(
-                        original_img, model=model, timeout=timeout
+        # Only ask LLM if CV explicitly said "no crop needed" and mode is post_cv
+        if strategy in ("no_crop_needed", "original") and mode == "post_cv":
+            llm_result, available = _call_llm(
+                original_img, progress_callback, purpose="Checking for missed border"
+            )
+            if llm_result:
+                no_crop_result["llm_result"] = llm_result
+                if llm_result["verdict"] == "SAFE":
+                    no_crop_result["strategy"] = "llm_border_detected"
+                    no_crop_result["tier"] = 2
+                    no_crop_result["tier_label"] = "llm_border_detected"
+                    logger.info(
+                        f"LLM detected border CV missed: {llm_result['reason']}"
                     )
-                    no_crop_result["llm_result"] = llm_result
-
-                    if llm_result["verdict"] == "SAFE":
-                        # LLM sees a border that CV missed -- flag for user
-                        no_crop_result["strategy"] = "llm_border_detected"
-                        no_crop_result["tier"] = 2
-                        no_crop_result["tier_label"] = "llm_border_detected"
-                        logger.info(
-                            f"LLM detected border CV missed: {llm_result['reason']}"
-                        )
-                    else:
-                        # LLM agrees no border -- genuinely no crop needed
-                        no_crop_result["tier_label"] = "llm_confirmed_no_crop"
-                        logger.info(
-                            f"LLM confirms no border: {llm_result['reason']}"
-                        )
+                else:
+                    no_crop_result["tier_label"] = "llm_confirmed_no_crop"
+                    logger.info(
+                        f"LLM confirms no border: {llm_result['reason']}"
+                    )
 
         return no_crop_result
 
@@ -155,65 +247,50 @@ def route_crop(original_img, cropped_img, strategy, confidence, validation, prog
         logger.info(f"Tier 1: Auto-approved (confidence={confidence})")
         return result
 
-    elif tier == 2:
-        # Medium confidence — ask LLM
-        cfg = _load_config()
-        llm_cfg = cfg.get("llm", {})
+    elif tier == 2 and mode == "post_cv":
+        # Medium confidence — ask LLM to validate
+        llm_result, available = _call_llm(
+            original_img, progress_callback, purpose="Validating crop"
+        )
 
-        if not llm_cfg.get("enabled", True):
-            # LLM disabled — fall back to auto-approve
-            result["tier_label"] = "llm_disabled"
-            logger.info(f"Tier 2: LLM disabled, auto-approving (confidence={confidence})")
-            return result
-
-        from core.llm_validator import validate_with_llm, is_available
-
-        if not is_available():
-            # Ollama not running — use fallback
-            fallback = llm_cfg.get("fallback_on_error", "SKIP")
+        if not available:
+            cfg = _load_config()
+            fallback = cfg.get("llm", {}).get("fallback_on_error", "SKIP")
             result["llm_result"] = {
-                "verdict": fallback,
-                "confidence": "LOW",
-                "reason": "Ollama not available",
-                "time_ms": 0,
+                "verdict": fallback, "confidence": "LOW",
+                "reason": "Ollama not available", "time_ms": 0,
             }
             if fallback == "SKIP":
                 result["cropped_img"] = None
                 result["strategy"] = "llm_unavailable"
                 result["tier_label"] = "llm_unavailable"
-            logger.info(f"Tier 2: Ollama unavailable, fallback={fallback}")
             return result
 
-        # Call LLM
-        model = llm_cfg.get("model", "qwen3.5:2b")
-        timeout = llm_cfg.get("timeout_seconds", 15)
-
-        if progress_callback:
-            progress_callback("llm", f"Validating crop with LLM ({model}, takes ~30s)...")
-        logger.info(f"Tier 2: Calling LLM (confidence={confidence}, model={model})")
-        llm_result = validate_with_llm(
-            original_img, model=model, timeout=timeout
-        )
         result["llm_result"] = llm_result
 
         if llm_result["verdict"] == "SAFE":
             result["tier_label"] = "llm_approved"
             logger.info(f"Tier 2: LLM approved ({llm_result['reason']})")
         elif llm_result["verdict"] == "RISKY":
-            # LLM says risky — reject the crop, keep original
             result["cropped_img"] = None
             result["strategy"] = "llm_rejected"
             result["tier_label"] = "llm_rejected"
             logger.info(f"Tier 2: LLM rejected ({llm_result['reason']})")
         else:
-            # SKIP or unparseable — use fallback
-            fallback = llm_cfg.get("fallback_on_error", "SKIP")
+            cfg = _load_config()
+            fallback = cfg.get("llm", {}).get("fallback_on_error", "SKIP")
             if fallback == "SKIP":
                 result["cropped_img"] = None
                 result["strategy"] = "llm_skip"
                 result["tier_label"] = "llm_skip"
             logger.info(f"Tier 2: LLM returned SKIP, fallback={fallback}")
 
+        return result
+
+    elif tier == 2 and mode != "post_cv":
+        # LLM is off or pre_cv already ran — auto-approve Tier 2
+        result["tier_label"] = "llm_disabled"
+        logger.info(f"Tier 2: LLM mode={mode}, auto-approving")
         return result
 
     else:

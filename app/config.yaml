@@ -11,8 +11,11 @@ confidence:
 
 llm:
   enabled: true
+  # Mode: "off" = no LLM, "post_cv" = CV first then LLM validates,
+  #        "pre_cv" = LLM decides first, then CV crops if needed
+  mode: "post_cv"
   model: "qwen3.5:2b"
-  timeout_seconds: 15
+  timeout_seconds: 60
   # What to do if LLM fails (timeout, error, unavailable)
   # "SKIP" = keep original (safest), "SAFE" = assume crop is fine
   fallback_on_error: "SKIP"
