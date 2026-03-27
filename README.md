@@ -28,11 +28,10 @@ To build a robust batch image cropping system that:
 - Works on scanned photos and documents
 - Handles uneven lighting and borders
 - Avoids cutting faces or important content
-- Works without GPU or heavy AI models
+- Combines the speed of **Classical Computer Vision** with the reasoning of a **Local Vision LLM**.
 - Can be safely used in automation pipelines
 
-This is a **deterministic system** relying on proven computer vision techniques.
-No AI guessing, no vision LLMs, no black-box magic, no heavy GPU usage.
+This is a **hybrid system**. It uses proven, deterministic computer vision techniques for 90% of the work, and calls upon a local AI (via Ollama) only when it needs a second opinion or pre-screening, guaranteeing strict "Zero Data Loss".
 
 ---
 
@@ -50,13 +49,13 @@ This is the easiest way to use the tool. It gives you a drag-and-drop interface 
 
 ### Prerequisites
 
-You need **Python 3.10 or newer** installed on your system. You can check by running:
+1. **Python 3.10+**: Download from [python.org](https://www.python.org/downloads/).
+2. **Ollama**: (Optional but recommended for AI validation). Download from [ollama.com](https://ollama.com/).
 
+If using Ollama, ensure you install the vision model via terminal before running the app:
+```bash
+ollama pull qwen3.5:2b
 ```
-python --version
-```
-
-If you do not have Python, download it from [python.org](https://www.python.org/downloads/).
 
 ### Step 1: Install Dependencies
 
@@ -204,21 +203,28 @@ BATCH RESULTS: 265 images
 
 The core insight is simple:
 
-> **Do not detect the photo. Detect the background.**
+> **Do not guess what the photo is. Detect the scanner background.**
 
-Instead of trying to find the photo content (which varies wildly between images), we detect the flat, uniform scanner background and crop it away. This is the standard principle used in professional document digitization.
+Instead of trying to find the photo content, we detect the flat, uniform scanner background and crop it away. This is backed by a **Hybrid 3-Tier Architecture**:
 
-### The 5-Tier Fallback Strategy
+### The 3-Tier Routing System
+1. **Tier 1 (High Confidence):** The Classical CV engine is completely sure it found a perfect border. Auto-crops instantly.
+2. **Tier 2 (Medium Confidence/No-Crop):** The CV engine is unsure, or thinks no crop is needed. It asks the local LLM (`qwen3.5:2b`) to look at the image and verify.
+3. **Tier 3 (Low Confidence):** The CV engine failed entirely. The image is flagged for manual review and kept unchanged.
 
-The engine tries five different strategies in order. If one fails, it falls back to the next. If all five fail, the original image is kept untouched (zero data loss).
+*(Note: The LLM can be toggled via the UI into **Pre-CV mode** (where the AI screens the image before CV even tries), **Post-CV mode**, or turned **OFF** completely.)*
 
-| Tier | Strategy | How It Works | When It Helps |
+### The 5-Tier CV Fallback Strategy
+
+Under the hood, the Classical CV engine tries five strategies in order:
+
+| CV Tier | Strategy | How It Works | When It Helps |
 |------|----------|--------------|---------------|
-| 1 | **Otsu + RETR_EXTERNAL** | Binarizes the image using Otsu's automatic threshold, cleans up with morphological closing, then finds the outermost contour only. | Works for most scanned photos with clear borders. This is the primary strategy. |
-| 2 | **Canny Edge Detection** | Detects physical edges regardless of fill color using gradient-based edge detection. | Catches "snow photos" where the photo content is white-on-white. |
-| 3 | **Variance-based** | Calculates local pixel variance. Scanner background has near-zero variance, while real photos have texture. | Handles stubborn cases where both Otsu and Canny fail. |
-| 4 | **Saturation-based** | Scanner backgrounds are pure neutral gray (zero color saturation). Real photos, even snow scenes, have slight color casts. | Works when the image is almost entirely white but has subtle color. |
-| 5 | **Gradient Line Scan** | Scans from each edge inward looking for the first row or column with significant gradient changes. | Last resort for finding a physical photo border. |
+| 1 | **Otsu + RETR_EXTERNAL** | Binarizes the image using Otsu's threshold, then finds the outermost contour. | Works for most scanned photos with clear borders. This is the primary strategy. |
+| 2 | **Canny Edge Detection** | Detects physical edges using gradient-based detection. | Catches "snow photos" where the photo content is white-on-white. |
+| 3 | **Variance-based** | Calculates local pixel variance. Scanner background has near-zero variance. | Handles stubborn cases where both Otsu and Canny fail. |
+| 4 | **Saturation-based** | Scanner backgrounds are pure neutral gray. Real photos have slight color casts. | Works when the image is almost entirely white but has subtle color. |
+| 5 | **Gradient Line Scan** | Scans from each edge inward looking for significant gradient changes. | Last resort for finding a physical photo border. |
 
 ### Preprocessing Steps
 
@@ -273,13 +279,15 @@ project root/
 
 ## Safety and Reliability
 
-This pipeline uses multi-level fallback logic:
+This pipeline uses multi-level fallback logic to guarantee **zero accidental data loss**:
 
 1. **Primary**: Try external contour crop (exact shape).
-2. **Fallback**: If the contour is irregular, switch to bounding-box crop (rectangular safety).
-3. **Fail-safe**: If still uncertain, keep the original image unchanged.
+2. **Fallback CV**: Try simpler edge techniques (Canny, Variance).
+3. **Safety Guard (`_safe_crop`)**: Reject any mathematical crop that cuts off too much of the image based on the original resolution.
+4. **AI Verification**: Ask an offline vision LLM (`qwen3.5:2b`) to confirm ambiguous cases.
+5. **Fail-safe**: If still uncertain, keep the original image unchanged.
 
-This guarantees **zero accidental data loss**. An image is never destroyed or over-cropped. The worst case is that it stays untouched and you crop it manually.
+An image is never destroyed or over-cropped. The worst case is that it stays untouched and you crop it manually.
 
 ---
 
